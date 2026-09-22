@@ -5,7 +5,7 @@ import subprocess
 import threading
 import requests
 
-CURRENT_VERSION = "1.0.4"
+CURRENT_VERSION = "1.0.5"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
@@ -73,7 +73,8 @@ def check_for_updates() -> dict | None:
 
 def download_and_install_update(download_url: str, on_progress=None, on_error=None):
     """
-    Скачивает новый бинарник и запускает процесс самообновления с корректной поддержкой UTF-8 пути.
+    Скачивает новый бинарник и запускает процесс самообновления
+    с запросом прав администратора (UAC) для записи в Program Files.
     """
     def _worker():
         try:
@@ -100,26 +101,58 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
                             on_progress(downloaded / total_len)
 
             pid = os.getpid()
-
-            # Скрипт PowerShell для безопасной замены бинарника и сохранения кириллических путей
             ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
+
+            # Скрипт PowerShell:
+            # 1. Ждет закрытия процесса PID, при зависании принудительно убивает его.
+            # 2. Пытается скопировать файл (в цикле до 10 попыток, если файл заблокирован).
+            # 3. При успехе запускает новый файл и удаляет временные скрипты.
             ps_content = f"""
 $pid_to_wait = {pid}
-while (Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) {{
+$attempts = 0
+
+while ((Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) -and ($attempts -lt 10)) {{
+    Start-Sleep -Seconds 1
+    $attempts++
+}}
+
+if (Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) {{
+    Stop-Process -Id $pid_to_wait -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
 }}
-Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force
-Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
-Start-Process -FilePath '{current_exe}'
+
+$copySuccess = $false
+for ($i = 0; $i -lt 10; $i++) {{
+    try {{
+        Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force -ErrorAction Stop
+        $copySuccess = $true
+        break
+    }} catch {{
+        Start-Sleep -Seconds 1
+    }}
+}}
+
+if ($copySuccess) {{
+    Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
+    Start-Process -FilePath '{current_exe}'
+}}
+
 Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 """
             with open(ps_script, "w", encoding="utf-8-sig") as f:
                 f.write(ps_content)
 
-            subprocess.Popen(
-                ["powershell.exe", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps_script],
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            )
+            # Запуск PowerShell от имени администратора (Verb RunAs) для доступа к папке Program Files
+            vbs_launcher = os.path.join(temp_dir, "reapps_elevate.vbs")
+            vbs_content = f'''Set UAC = CreateObject("Shell.Application")
+UAC.ShellExecute "powershell.exe", "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{ps_script}""", "", "runas", 0
+'''
+            with open(vbs_launcher, "w", encoding="ansi") as f:
+                f.write(vbs_content)
+
+            subprocess.Popen(["wscript.exe", vbs_launcher], shell=True)
+
+            # Принудительно завершаем текущий процесс приложения, освобождая файл
             os._exit(0)
 
         except Exception as e:
