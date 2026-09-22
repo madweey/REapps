@@ -62,7 +62,13 @@ def main(page: ft.Page):
     def prompt_update_dialog(update_info: dict):
         prog_bar = ft.ProgressBar(width=420, value=0, visible=False, color="#1976D2")
         status_lbl = ft.Text("", size=11, color="#616161")
-        btn_update = ft.ElevatedButton("Обновить сейчас", bgcolor="#1976D2", color="#FFFFFF")
+        has_exe = bool(update_info.get("download_url"))
+
+        btn_update = ft.ElevatedButton(
+            "Обновить сейчас" if has_exe else "Перейти к релизу",
+            bgcolor="#1976D2",
+            color="#FFFFFF",
+        )
         btn_cancel = ft.TextButton("Напомнить позже")
 
         def close_dlg(e=None):
@@ -72,9 +78,8 @@ def main(page: ft.Page):
         def do_update(e):
             download_url = update_info.get("download_url")
             if not download_url:
-                status_lbl.value = "Ошибка: исполняемый файл (.exe) не найден в релизе!"
-                status_lbl.color = "#D32F2F"
-                page.update()
+                page.launch_url(f"https://github.com/madweey/REapps/releases/tag/{update_info.get('version')}")
+                close_dlg()
                 return
 
             btn_update.disabled = True
@@ -100,7 +105,7 @@ def main(page: ft.Page):
             download_and_install_update(
                 download_url=download_url,
                 on_progress=on_progress,
-                on_error=on_err
+                on_error=on_err,
             )
 
         btn_update.on_click = do_update
@@ -126,7 +131,7 @@ def main(page: ft.Page):
                             padding=10,
                             border_radius=6,
                             content=ft.Text(body_notes, size=11, color="#37474F"),
-                            max_height=140,
+                            height=120,
                         ),
                         prog_bar,
                         status_lbl,
@@ -137,7 +142,9 @@ def main(page: ft.Page):
             ),
             actions=[btn_cancel, btn_update],
         )
-        page.dialog = dlg
+
+        if dlg not in page.overlay:
+            page.overlay.append(dlg)
         dlg.open = True
         page.update()
 
@@ -146,12 +153,23 @@ def main(page: ft.Page):
             return
         update_checked["done"] = True
 
-        def _check():
+        def _worker():
+            print("[Updater] Проверка обновлений на GitHub...")
             info = check_for_updates()
+            print(f"[Updater] Ответ от GitHub: {info}")
             if info:
-                prompt_update_dialog(info)
+                try:
+                    if hasattr(page, "run_thread"):
+                        page.run_thread(prompt_update_dialog, info)
+                    elif hasattr(page, "loop") and page.loop and page.loop.is_running():
+                        page.loop.call_soon_threadsafe(prompt_update_dialog, info)
+                    else:
+                        prompt_update_dialog(info)
+                except Exception as ex:
+                    print(f"[Updater ERROR] Ошибка показа окна: {ex}")
+                    prompt_update_dialog(info)
 
-        threading.Thread(target=_check, daemon=True).start()
+        threading.Thread(target=_worker, daemon=True).start()
 
     def render_splash_screen():
         page.clean()
@@ -410,7 +428,8 @@ def main(page: ft.Page):
             ),
             actions=[ft.TextButton("Закрыть", on_click=lambda ev: (setattr(dlg, "open", False), page.update()))],
         )
-        page.dialog = dlg
+        if dlg not in page.overlay:
+            page.overlay.append(dlg)
         dlg.open = True
         page.update()
 

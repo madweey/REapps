@@ -6,6 +6,7 @@ session.json
 # Папки сборок и кэш
 build/
 dist/
+dist_installer/
 __pycache__/
 *.pyc
 *.spec
