@@ -5,13 +5,13 @@ import subprocess
 import threading
 import requests
 
-CURRENT_VERSION = "1.0.7"
+CURRENT_VERSION = "1.0.8"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
 
 def parse_version(ver_str: str) -> tuple:
-    """Очищает строку версии (v1.0.2 -> (1, 0, 2))."""
+    """Очищает строку версии (v1.0.8 -> (1, 0, 8))."""
     clean = ver_str.strip().lstrip("vV")
     parts = []
     for p in clean.split("."):
@@ -31,7 +31,6 @@ def check_for_updates() -> dict | None:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
-        # Запрос без следования редиректу: GitHub сразу отдает Location с финальным тегом
         resp = requests.get(RELEASE_URL, headers=headers, allow_redirects=False, timeout=5)
         print(f"[Updater DEBUG] URL: {RELEASE_URL}")
         print(f"[Updater DEBUG] Status code: {resp.status_code}")
@@ -74,7 +73,7 @@ def check_for_updates() -> dict | None:
 def download_and_install_update(download_url: str, on_progress=None, on_error=None):
     """
     Скачивает новый бинарник и запускает процесс самообновления
-    с запросом прав администратора (UAC) для записи в Program Files.
+    с принудительным завершением старых процессов приложения.
     """
     def _worker():
         try:
@@ -87,7 +86,7 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
             temp_dir = tempfile.gettempdir()
             new_exe = os.path.join(temp_dir, "REapps_new.exe")
 
-            resp = requests.get(download_url, stream=True, timeout=30)
+            resp = requests.get(download_url, stream=True, timeout=60)
             resp.raise_for_status()
             total_len = int(resp.headers.get("content-length", 0))
 
@@ -103,32 +102,30 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
             pid = os.getpid()
             ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
 
-            # Скрипт PowerShell:
-            # 1. Ждет закрытия процесса PID, при зависании принудительно убивает его.
-            # 2. Пытается скопировать файл (в цикле до 10 попыток, если файл заблокирован).
-            # 3. При успехе запускает новый файл и удаляет временные скрипты.
             ps_content = f"""
 $pid_to_wait = {pid}
 $attempts = 0
 
-while ((Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) -and ($attempts -lt 10)) {{
-    Start-Sleep -Seconds 1
+# Ожидание выхода основного процесса
+while ((Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) -and ($attempts -lt 15)) {{
+    Start-Sleep -Milliseconds 300
     $attempts++
 }}
 
-if (Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) {{
-    Stop-Process -Id $pid_to_wait -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-}}
+# Принудительное уничтожение процессов REapps и движка Flet
+taskkill /F /PID $pid_to_wait /T 2>$null
+taskkill /F /IM REapps.exe /T 2>$null
+taskkill /F /IM flet.exe /T 2>$null
+Start-Sleep -Milliseconds 600
 
 $copySuccess = $false
-for ($i = 0; $i -lt 10; $i++) {{
+for ($i = 0; $i -lt 15; $i++) {{
     try {{
         Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force -ErrorAction Stop
         $copySuccess = $true
         break
     }} catch {{
-        Start-Sleep -Seconds 1
+        Start-Sleep -Milliseconds 600
     }}
 }}
 
@@ -142,7 +139,6 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
             with open(ps_script, "w", encoding="utf-8-sig") as f:
                 f.write(ps_content)
 
-            # Запуск PowerShell от имени администратора (Verb RunAs) для доступа к папке Program Files
             vbs_launcher = os.path.join(temp_dir, "reapps_elevate.vbs")
             vbs_content = f'''Set UAC = CreateObject("Shell.Application")
 UAC.ShellExecute "powershell.exe", "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{ps_script}""", "", "runas", 0
@@ -151,8 +147,6 @@ UAC.ShellExecute "powershell.exe", "-ExecutionPolicy Bypass -WindowStyle Hidden 
                 f.write(vbs_content)
 
             subprocess.Popen(["wscript.exe", vbs_launcher], shell=True)
-
-            # Принудительно завершаем текущий процесс приложения, освобождая файл
             os._exit(0)
 
         except Exception as e:

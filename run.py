@@ -24,19 +24,16 @@ MUTEX_HANDLE = None
 
 def get_asset_path(filename: str) -> str:
     """Ищет файл во временной папке PyInstaller, рядом с .exe или в корне проекта."""
-    # 1. PyInstaller распаковка
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         p = os.path.join(sys._MEIPASS, filename)
         if os.path.exists(p):
             return p
 
-    # 2. Рядом с исполняемым файлом или run.py
     base_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
     p = os.path.join(base_dir, filename)
     if os.path.exists(p):
         return p
 
-    # 3. Текущая рабочая директория
     p = os.path.join(os.getcwd(), filename)
     if os.path.exists(p):
         return p
@@ -55,10 +52,7 @@ def setup_windows_environment():
 
 
 def ensure_single_instance() -> bool:
-    """
-    Проверяет, запущена ли уже копия программы через глобальный мьютекс Windows.
-    Если запущена — активирует существующее окно и возвращает False.
-    """
+    """Проверяет запуск копии через мьютекс Windows."""
     global MUTEX_HANDLE
     if sys.platform != "win32":
         return True
@@ -76,7 +70,7 @@ def ensure_single_instance() -> bool:
             if not hwnd:
                 hwnd = user32.FindWindowW(None, None)
             if hwnd:
-                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.ShowWindow(hwnd, 9)
                 user32.SetForegroundWindow(hwnd)
             return False
         return True
@@ -101,7 +95,6 @@ def build_app_icon_control(size: int = 84) -> ft.Control:
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         )
 
-    # Запасной нативный вариант, если файл иконки отсутствует
     return ft.Container(
         width=size,
         height=size,
@@ -155,6 +148,7 @@ def main(page: ft.Page):
 
     current_user = {"data": None}
     active_nav_key = {"val": "meetings_book"}
+    is_loading_module = {"val": False}
     content_area = ft.Container(expand=True)
     update_checked = {"done": False}
 
@@ -293,7 +287,7 @@ def main(page: ft.Page):
                         page.loop.call_soon_threadsafe(prompt_update_dialog, info)
                     else:
                         prompt_update_dialog(info)
-                except Exception as ex:
+                except Exception:
                     prompt_update_dialog(info)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -574,9 +568,11 @@ def main(page: ft.Page):
 
         def make_nav_item(title: str, icon: str, key: str, is_subitem: bool = False, badge: str | None = None):
             is_active = (active_nav_key["val"] == key)
+            is_loading = is_loading_module["val"] and is_active
 
-            default_bg = "#EBF3FC" if is_active else ft.colors.TRANSPARENT
-            hover_bg = "#E1ECF9" if is_active else "#F1F5F9"
+            # Если грузится, фон плашки становится более плотным
+            default_bg = "#D0E4FA" if is_loading else ("#EBF3FC" if is_active else ft.colors.TRANSPARENT)
+            hover_bg = "#C4DCF7" if is_loading else ("#E1ECF9" if is_active else "#F1F5F9")
             icon_color = "#1565C0" if is_active else "#64748B"
             text_color = "#0D47A1" if is_active else "#334155"
             text_weight = ft.FontWeight.BOLD if is_active else ft.FontWeight.W_500
@@ -604,17 +600,35 @@ def main(page: ft.Page):
                     )
                 )
 
+            # Бегущая строка (Progress Indicator) строго внутри плашки
+            item_progress_bar = ft.ProgressBar(
+                height=2,
+                color="#1976D2",
+                bgcolor="#BBDEFB",
+                visible=is_loading,
+            )
+
+            item_column = ft.Column(
+                controls=[
+                    ft.Row(label_row_controls, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    item_progress_bar,
+                ],
+                spacing=3,
+                tight=True,
+            )
+
             item_container = ft.Container(
-                content=ft.Row(label_row_controls, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.padding.only(left=10 if is_subitem else 6, top=7, bottom=7, right=8),
+                content=item_column,
+                padding=ft.padding.only(left=10 if is_subitem else 6, top=6, bottom=5, right=8),
                 border_radius=6,
                 bgcolor=default_bg,
                 on_click=lambda e, k=key: load_module_by_key(k),
             )
 
             def on_item_hover(e):
-                item_container.bgcolor = hover_bg if e.data == "true" else default_bg
-                item_container.update()
+                if not (is_loading_module["val"] and active_nav_key["val"] == key):
+                    item_container.bgcolor = hover_bg if e.data == "true" else default_bg
+                    item_container.update()
 
             item_container.on_hover = on_item_hover
             return item_container
@@ -757,46 +771,64 @@ def main(page: ft.Page):
         )
 
     def load_module_by_key(key: str):
+        # Защита от повторного вызова активного пункта и двойного клика
+        if is_loading_module["val"]:
+            return
+        if active_nav_key["val"] == key and content_area.content is not None:
+            return
+
+        is_loading_module["val"] = True
         active_nav_key["val"] = key
-        user = current_user["data"]
-
-        if key.startswith("meetings_"):
-            if not controllers_cache["meetings"]:
-                controllers_cache["meetings"] = MeetingsController(page, user)
-            content_area.content = controllers_cache["meetings"].get_view(key)
-        elif key == "transcription_single":
-            if not controllers_cache["transcription_single"]:
-                controllers_cache["transcription_single"] = SingleAnalysisView(page, user)
-            content_area.content = controllers_cache["transcription_single"]
-        elif key == "transcription_batch":
-            if not controllers_cache["transcription_batch"]:
-                controllers_cache["transcription_batch"] = BatchAnalysisView(page)
-            content_area.content = controllers_cache["transcription_batch"]
-        elif key == "transcription_prompts":
-            if not controllers_cache["transcription_prompts"]:
-                controllers_cache["transcription_prompts"] = PromptsView(page)
-            content_area.content = controllers_cache["transcription_prompts"]
-        elif key == "calculator_dp":
-            if not controllers_cache["calc_dp"]:
-                controllers_cache["calc_dp"] = DPView(page, user)
-            content_area.content = controllers_cache["calc_dp"]
-        elif key == "calculator_repair":
-            content_area.content = build_in_development_view("Калькулятор ремонта")
-        elif key == "estimate":
-            content_area.content = build_in_development_view("Смета")
-        elif key == "reports":
-            content_area.content = build_in_development_view("Отчеты")
-        elif key == "access":
-            if not controllers_cache["access"]:
-                controllers_cache["access"] = AccessView(page, user)
-            content_area.content = controllers_cache["access"]
-        elif key == "links":
-            if not controllers_cache["links"]:
-                controllers_cache["links"] = LinksView(page)
-            content_area.content = controllers_cache["links"]
-
         render_sidebar()
         page.update()
+
+        def _loader():
+            try:
+                user = current_user["data"]
+                view_to_set = None
+
+                if key.startswith("meetings_"):
+                    if not controllers_cache["meetings"]:
+                        controllers_cache["meetings"] = MeetingsController(page, user)
+                    view_to_set = controllers_cache["meetings"].get_view(key)
+                elif key == "transcription_single":
+                    if not controllers_cache["transcription_single"]:
+                        controllers_cache["transcription_single"] = SingleAnalysisView(page, user)
+                    view_to_set = controllers_cache["transcription_single"]
+                elif key == "transcription_batch":
+                    if not controllers_cache["transcription_batch"]:
+                        controllers_cache["transcription_batch"] = BatchAnalysisView(page)
+                    view_to_set = controllers_cache["transcription_batch"]
+                elif key == "transcription_prompts":
+                    if not controllers_cache["transcription_prompts"]:
+                        controllers_cache["transcription_prompts"] = PromptsView(page)
+                    view_to_set = controllers_cache["transcription_prompts"]
+                elif key == "calculator_dp":
+                    if not controllers_cache["calc_dp"]:
+                        controllers_cache["calc_dp"] = DPView(page, user)
+                    view_to_set = controllers_cache["calc_dp"]
+                elif key == "calculator_repair":
+                    view_to_set = build_in_development_view("Калькулятор ремонта")
+                elif key == "estimate":
+                    view_to_set = build_in_development_view("Смета")
+                elif key == "reports":
+                    view_to_set = build_in_development_view("Отчеты")
+                elif key == "access":
+                    if not controllers_cache["access"]:
+                        controllers_cache["access"] = AccessView(page, user)
+                    view_to_set = controllers_cache["access"]
+                elif key == "links":
+                    if not controllers_cache["links"]:
+                        controllers_cache["links"] = LinksView(page)
+                    view_to_set = controllers_cache["links"]
+
+                content_area.content = view_to_set
+            finally:
+                is_loading_module["val"] = False
+                render_sidebar()
+                page.update()
+
+        threading.Thread(target=_loader, daemon=True).start()
 
     def render_main_layout():
         page.clean()
