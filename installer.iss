@@ -1,6 +1,6 @@
 ; Скрипт создания установщика Inno Setup для Ассистент RE
 #define MyAppName "Ассистент RE"
-#define MyAppVersion "1.0.2"
+#define MyAppVersion "1.0.3"
 #define MyAppPublisher "RE Design Buro"
 #define MyAppExeName "REapps.exe"
 

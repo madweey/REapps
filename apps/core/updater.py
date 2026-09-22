@@ -5,7 +5,7 @@ import subprocess
 import threading
 import requests
 
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "1.0.3"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
@@ -73,8 +73,7 @@ def check_for_updates() -> dict | None:
 
 def download_and_install_update(download_url: str, on_progress=None, on_error=None):
     """
-    Скачивает новый бинарник и запускает процесс самообновления.
-    Работает как для скомпилированного .exe, так и сигнализирует при запуске из исходников.
+    Скачивает новый бинарник и запускает процесс самообновления с корректной поддержкой UTF-8 пути.
     """
     def _worker():
         try:
@@ -100,28 +99,25 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
                         if total_len > 0 and on_progress:
                             on_progress(downloaded / total_len)
 
-            bat_path = os.path.join(temp_dir, "reapps_updater.bat")
             pid = os.getpid()
 
-            bat_script = f"""@echo off
-chcp 65001 > nul
-:wait_loop
-tasklist /fi "PID eq {pid}" | find ":" > nul
-if errorlevel 1 (
-    timeout /t 1 /nobreak > nul
-    goto wait_loop
-)
-
-copy /y "{new_exe}" "{current_exe}" > nul
-del /f /q "{new_exe}" > nul
-start "" "{current_exe}"
-del /f /q "%~f0" > nul
+            # Скрипт PowerShell для безопасной замены бинарника и сохранения кириллических путей
+            ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
+            ps_content = f"""
+$pid_to_wait = {pid}
+while (Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) {{
+    Start-Sleep -Seconds 1
+}}
+Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force
+Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
+Start-Process -FilePath '{current_exe}'
+Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 """
-            with open(bat_path, "w", encoding="cp866", errors="ignore") as f:
-                f.write(bat_script)
+            with open(ps_script, "w", encoding="utf-8-sig") as f:
+                f.write(ps_content)
 
             subprocess.Popen(
-                ["cmd.exe", "/c", bat_path],
+                ["powershell.exe", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps_script],
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
             )
             os._exit(0)
