@@ -1,6 +1,7 @@
 import calendar
 import datetime
 import math
+import threading
 import flet as ft
 from apps.calculator.dp_calc import calculate_dp
 from apps.calculator.kp_generator import generate_kp_presentation, format_money
@@ -82,17 +83,19 @@ def DPView(page: ft.Page, current_user: dict | None = None):
 
     calc_state = {"data": None, "discount_val": 0.0}
 
-    # Загрузка описания тарифов из листа 'Настройка'
-    def load_tariffs_sheet_info():
-        try:
-            info = get_dp_tariffs_info()
-            dp_target_text.value = info.get("online", {}).get("target", "-")
-            dp_adv_text.value = info.get("online", {}).get("advantages", "-")
-            odp_target_text.value = info.get("full", {}).get("target", "-")
-            odp_adv_text.value = info.get("full", {}).get("advantages", "-")
-            page.update()
-        except Exception:
-            pass
+    # Фоновая загрузка описания тарифов из листа 'Настройка' без подвисания интерфейса
+    def load_tariffs_sheet_info_async():
+        def _worker():
+            try:
+                info = get_dp_tariffs_info()
+                dp_target_text.value = info.get("online", {}).get("target", "-")
+                dp_adv_text.value = info.get("online", {}).get("advantages", "-")
+                odp_target_text.value = info.get("full", {}).get("target", "-")
+                odp_adv_text.value = info.get("full", {}).get("advantages", "-")
+                page.update()
+            except Exception:
+                pass
+        threading.Thread(target=_worker, daemon=True).start()
 
     def get_promo_config(option_name: str) -> tuple[float, str]:
         today = datetime.date.today()
@@ -293,7 +296,6 @@ def DPView(page: ft.Page, current_user: dict | None = None):
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
-                    # Платеж 1/3
                     ft.Container(
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
                         border_radius=8,
@@ -317,7 +319,6 @@ def DPView(page: ft.Page, current_user: dict | None = None):
                         spacing=6,
                     ),
                     ft.Divider(height=1, color=ft.colors.GREY_200),
-                    # Инфо-блоки из таблицы
                     ft.Column(
                         controls=[
                             ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE, size=15, color=ft.colors.BLUE_700), ft.Text("Кому подойдет:", size=12, weight=ft.FontWeight.BOLD)], spacing=6),
@@ -370,7 +371,6 @@ def DPView(page: ft.Page, current_user: dict | None = None):
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
-                    # Платеж 1/3
                     ft.Container(
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
                         border_radius=8,
@@ -394,7 +394,6 @@ def DPView(page: ft.Page, current_user: dict | None = None):
                         spacing=6,
                     ),
                     ft.Divider(height=1, color=ft.colors.GREY_200),
-                    # Инфо-блоки из таблицы
                     ft.Column(
                         controls=[
                             ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE, size=15, color=ft.colors.INDIGO_700), ft.Text("Кому подойдет:", size=12, weight=ft.FontWeight.BOLD)], spacing=6),
@@ -411,24 +410,25 @@ def DPView(page: ft.Page, current_user: dict | None = None):
         ),
     )
 
-    load_tariffs_sheet_info()
+    load_tariffs_sheet_info_async()
 
-    return ft.Container(
-        padding=24,
+    header_block = ft.Container(
+        padding=ft.padding.only(left=24, right=24, top=20, bottom=10),
         content=ft.Column(
             controls=[
-                ft.Row(
-                    controls=[
-                        ft.Column(
-                            controls=[
-                                ft.Text("Калькулятор Дизайн-Проекта (ДП)", size=22, weight=ft.FontWeight.BOLD),
-                                ft.Text("Расчет тарифов Онлайн и С сопровождением с генерацией презентации", size=13, color=ft.colors.GREY_600),
-                            ],
-                            spacing=2,
-                        ),
-                    ],
-                ),
+                ft.Text("Калькулятор Дизайн-Проекта (ДП)", size=22, weight=ft.FontWeight.BOLD),
+                ft.Text("Расчет тарифов Онлайн и С сопровождением с генерацией презентации", size=13, color=ft.colors.GREY_600),
                 ft.Divider(height=1, color=ft.colors.GREY_300),
+            ],
+            spacing=4,
+        ),
+    )
+
+    scrollable_body = ft.Container(
+        padding=ft.padding.only(left=24, right=24, bottom=24),
+        expand=True,
+        content=ft.Column(
+            controls=[
                 ft.Text("Параметры объекта и клиента", size=15, weight=ft.FontWeight.BOLD),
                 ft.Row(controls=[client_name_input, address_input], spacing=12),
                 ft.Row(controls=[area_input, promo_dropdown, promo_input], spacing=12),
@@ -446,5 +446,10 @@ def DPView(page: ft.Page, current_user: dict | None = None):
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
         ),
+    )
+
+    return ft.Column(
+        controls=[header_block, scrollable_body],
+        spacing=0,
         expand=True,
     )

@@ -2,7 +2,13 @@ import os
 import json
 from apps.core.sheets_client import get_main_spreadsheet
 
-SESSION_FILE = "session.json"
+
+def get_session_file_path() -> str:
+    """Возвращает постоянный путь к файлу сессии в папке AppData пользователя."""
+    app_data = os.environ.get("APPDATA") or os.path.expanduser("~")
+    base_dir = os.path.join(app_data, "REapps")
+    os.makedirs(base_dir, exist_ok=True)
+    return os.path.join(base_dir, "session.json")
 
 
 def get_access_worksheet():
@@ -127,28 +133,31 @@ def authenticate(login_name: str, login_pass: str):
 def save_session(name: str, password: str):
     try:
         data = {"name": name.strip(), "password": password.strip()}
-        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+        session_file = get_session_file_path()
+        with open(session_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Auth] Ошибка сохранения сессии: {e}")
 
 
 def load_session():
-    if not os.path.exists(SESSION_FILE):
+    session_file = get_session_file_path()
+    if not os.path.exists(session_file):
         return None
     try:
-        with open(SESSION_FILE, "r", encoding="utf-8") as f:
+        with open(session_file, "r", encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict) and data.get("name") and data.get("password"):
             return data
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[Auth] Ошибка загрузки сессии: {e}")
     return None
 
 
 def clear_session():
-    if os.path.exists(SESSION_FILE):
+    session_file = get_session_file_path()
+    if os.path.exists(session_file):
         try:
-            os.remove(SESSION_FILE)
+            os.remove(session_file)
         except Exception:
             pass

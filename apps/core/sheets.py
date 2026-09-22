@@ -55,9 +55,30 @@ from apps.core.auth import (
     clear_session,
 )
 
+_CACHED_GEMINI_KEY = None
+
 
 def get_sheet_by_title(title: str):
     return get_main_spreadsheet().worksheet(title)
+
+
+def get_gemini_api_key_from_sheet(force_refresh: bool = False) -> str:
+    """Загружает API-ключ Gemini из листа 'Настройка', ячейка M11."""
+    global _CACHED_GEMINI_KEY
+    if _CACHED_GEMINI_KEY and not force_refresh:
+        return _CACHED_GEMINI_KEY
+
+    try:
+        ws = get_sheet_by_title("Настройка")
+        key_val = ws.acell("M11").value or ""
+        key_clean = key_val.strip()
+        if key_clean:
+            _CACHED_GEMINI_KEY = key_clean
+            return _CACHED_GEMINI_KEY
+    except Exception as e:
+        print(f"[Sheets] Ошибка чтения ключа Gemini из M11: {e}")
+
+    return _CACHED_GEMINI_KEY or ""
 
 
 __all__ = [
@@ -67,6 +88,7 @@ __all__ = [
     "get_spreadsheet_instance",
     "get_sheets_client",
     "get_sheet_by_title",
+    "get_gemini_api_key_from_sheet",
     "find_deal_by_link",
     "normalize_deal_url",
     "get_active_deals",

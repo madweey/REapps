@@ -58,6 +58,8 @@ class MeetingsController:
             "hooks": "",
         }
 
+        self.deal_verified = False
+
         self.selected_time = {"start": "", "end": "", "reason": ""}
         self.audio_state = {
             "player": None,
@@ -86,6 +88,7 @@ class MeetingsController:
             hint_text="Вставьте URL или номер сделки",
             expand=True,
             height=45,
+            on_change=self.on_deal_input_changed,
         )
 
         self.info_card_content = ft.Column(
@@ -166,6 +169,25 @@ class MeetingsController:
         self.custom_time_input = ft.TextField(label="Своё время", hint_text="11:30", width=150, height=45)
         self.call_url_input = ft.TextField(label="Ссылка на звонок (mp3)", hint_text="https://vats.../record.mp3", height=45)
         self.save_status_text = ft.Text("", size=13, weight=ft.FontWeight.W_500)
+
+        # Кнопки действий (изначально заблокированы, пока сделка не найдена)
+        self.btn_book_meeting = ft.ElevatedButton(
+            "Забронировать встречу",
+            icon=ft.icons.EVENT_AVAILABLE,
+            bgcolor=ft.colors.BLUE_700,
+            color=ft.colors.WHITE,
+            height=45,
+            disabled=True,
+            on_click=self.on_save_meeting,
+        )
+
+        self.btn_tg_form = ft.OutlinedButton(
+            "Форма для передачи",
+            icon=ft.icons.SEND,
+            height=45,
+            disabled=True,
+            on_click=self.show_tg_form,
+        )
 
         # 2. Расписание
         self.sched_date_from_input = ft.TextField(
@@ -302,9 +324,7 @@ class MeetingsController:
             ],
         )
 
-        # ----------------------------------------------------
         # Диалог редактирования встречи
-        # ----------------------------------------------------
         self.edit_call_url_input = ft.TextField(
             label="Ссылка на звонок (mp3)",
             hint_text="https://vats.../record.mp3 или Яндекс.Диск",
@@ -614,17 +634,38 @@ class MeetingsController:
             self.slot_info_badge.visible = True
             self.page.update()
 
+    def on_deal_input_changed(self, e):
+        """Сбрасывает верификацию сделки при изменении текста поля."""
+        if self.deal_verified:
+            self.deal_verified = False
+            self.btn_book_meeting.disabled = True
+            self.btn_tg_form.disabled = True
+            self.info_card.visible = False
+            self.save_status_text.value = "Ссылка на сделку изменена. Нажмите «Найти сделку» для проверки."
+            self.save_status_text.color = ft.colors.AMBER_800
+            self.page.update()
+
     def on_find_deal(self, e):
         url = self.deal_url_input.value.strip()
         if not url:
+            self.save_status_text.value = "Введите ссылку или номер сделки amoCRM!"
+            self.save_status_text.color = ft.colors.RED_400
+            self.page.update()
             return
+
         self.deal_url_input.disabled = True
+        self.save_status_text.value = "Поиск сделки..."
+        self.save_status_text.color = ft.colors.BLUE_700
         self.page.update()
 
         try:
             data = find_deal_by_link(url)
             if data:
                 self.deal_cache.update(data)
+                self.deal_verified = True
+                self.btn_book_meeting.disabled = False
+                self.btn_tg_form.disabled = False
+
                 self.info_card_content.controls = [
                     ft.Text(f"Клиент: {data['client']} | ID: {data['deal_id']} | ЖК: {data['complex']}", weight=ft.FontWeight.BOLD),
                     ft.Text(f"Менеджер amoCRM: {data['manager']}", weight=ft.FontWeight.W_500, color=ft.colors.BLUE_800),
@@ -635,17 +676,35 @@ class MeetingsController:
                     ft.Text(f"Комментарий: {data['comment']}", size=12),
                 ]
                 self.info_card.visible = True
+                self.save_status_text.value = "Сделка успешно найдена и подтверждена!"
+                self.save_status_text.color = ft.colors.GREEN_700
             else:
+                self.deal_verified = False
+                self.btn_book_meeting.disabled = True
+                self.btn_tg_form.disabled = True
                 self.info_card_content.controls = [ft.Text("Сделка не найдена в листе 'Сделки'", color=ft.colors.RED_400)]
                 self.info_card.visible = True
+                self.save_status_text.value = "Сделка не найдена!"
+                self.save_status_text.color = ft.colors.RED_400
         except Exception as err:
+            self.deal_verified = False
+            self.btn_book_meeting.disabled = True
+            self.btn_tg_form.disabled = True
             self.info_card_content.controls = [ft.Text(f"Ошибка загрузки: {err}", color=ft.colors.RED_400)]
             self.info_card.visible = True
+            self.save_status_text.value = f"Ошибка: {err}"
+            self.save_status_text.color = ft.colors.RED_400
         finally:
             self.deal_url_input.disabled = False
             self.page.update()
 
     def show_tg_form(self, e):
+        if not self.deal_verified:
+            self.save_status_text.value = "Сначала найдите сделку (кнопка «Найти сделку»)!"
+            self.save_status_text.color = ft.colors.RED_400
+            self.page.update()
+            return
+
         if not self.selected_time["start"]:
             self.save_status_text.value = "Сначала выберите время встречи!"
             self.save_status_text.color = ft.colors.RED_400
@@ -695,6 +754,10 @@ class MeetingsController:
         self.custom_time_input.value = ""
         self.info_card.visible = False
         self.save_status_text.value = ""
+        self.deal_verified = False
+        self.btn_book_meeting.disabled = True
+        self.btn_tg_form.disabled = True
+
         for k in self.deal_cache:
             self.deal_cache[k] = ""
         self.selected_time = {"start": "", "end": "", "reason": ""}
@@ -702,6 +765,12 @@ class MeetingsController:
         self.refresh_slots()
 
     def on_save_meeting(self, e):
+        if not self.deal_verified:
+            self.save_status_text.value = "Сначала подтвердите сделку (кнопка «Найти сделку»)!"
+            self.save_status_text.color = ft.colors.RED_400
+            self.page.update()
+            return
+
         if not self.selected_time["start"]:
             self.save_status_text.value = "Выберите время встречи!"
             self.save_status_text.color = ft.colors.RED_400
@@ -959,14 +1028,12 @@ class MeetingsController:
         try:
             update_meeting_details(row_idx, updated_data)
 
-            # Обновляем локальные данные встречи
             item.update(updated_data)
 
             self.edit_dialog.open = False
             self.load_schedule_list()
             self.load_registry_list()
 
-            # Если открыта карточка подробностей этой встречи, обновим её
             if self.detail_dialog.open:
                 self.open_meeting_details(item)
 
@@ -1312,8 +1379,8 @@ class MeetingsController:
                         self.call_url_input,
                         ft.Row(
                             controls=[
-                                ft.ElevatedButton("Забронировать встречу", icon=ft.icons.EVENT_AVAILABLE, bgcolor=ft.colors.BLUE_700, color=ft.colors.WHITE, height=45, on_click=self.on_save_meeting),
-                                ft.OutlinedButton("Форма для передачи", icon=ft.icons.SEND, height=45, on_click=self.show_tg_form),
+                                self.btn_book_meeting,
+                                self.btn_tg_form,
                             ],
                             spacing=12,
                         ),

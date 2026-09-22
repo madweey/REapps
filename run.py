@@ -1,5 +1,7 @@
 import os
+import sys
 import json
+import ctypes
 import threading
 import flet as ft
 
@@ -15,11 +17,113 @@ from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
 from apps.core.updater import check_for_updates, download_and_install_update, CURRENT_VERSION
 
+# ==========================================
+# WINDOWS APP ID И ЗАЩИТА ОТ ДУБЛИКАТОВ (SINGLE INSTANCE)
+# ==========================================
+MUTEX_HANDLE = None
+
+def setup_windows_environment():
+    """Задает AppUserModelID для отображения корректной иконки в панели задач Windows."""
+    if sys.platform == "win32":
+        try:
+            myappid = "redesignburo.reapps.assistant.1.0"
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except Exception:
+            pass
+
+def ensure_single_instance() -> bool:
+    """
+    Проверяет, запущена ли уже копия программы через глобальный мьютекс Windows.
+    Если запущена — активирует существующее окно и возвращает False.
+    """
+    global MUTEX_HANDLE
+    if sys.platform != "win32":
+        return True
+
+    try:
+        kernel32 = ctypes.windll.kernel32
+        user32 = ctypes.windll.user32
+        mutex_name = "Global\\REapps_SingleInstance_Mutex_REdesign"
+        MUTEX_HANDLE = kernel32.CreateMutexW(None, False, mutex_name)
+        last_error = kernel32.GetLastError()
+
+        if last_error == 183:
+            window_title = f"REapps v{CURRENT_VERSION} - Внутренняя система"
+            hwnd = user32.FindWindowW(None, window_title)
+            if not hwnd:
+                hwnd = user32.FindWindowW(None, None)
+            if hwnd:
+                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                user32.SetForegroundWindow(hwnd)
+            return False
+        return True
+    except Exception:
+        return True
+
+
+def build_brand_logo_widget(size: int = 84) -> ft.Control:
+    """Отрисовывает логотип RE DESIGN BURO (Вариант 1) строго через нативные компоненты."""
+    re_font_size = int(size * 0.40)
+    sub_font_size = max(8, int(size * 0.10))
+    radius = int(size * 0.22)
+
+    return ft.Container(
+        width=size,
+        height=size,
+        bgcolor="#16181B",
+        border_radius=radius,
+        alignment=ft.alignment.center,
+        content=ft.Column(
+            controls=[
+                ft.Text(
+                    "RE",
+                    size=re_font_size,
+                    weight=ft.FontWeight.W_900,
+                    color="#FFFFFF",
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(
+                    "DESIGN BURO",
+                    size=sub_font_size,
+                    weight=ft.FontWeight.BOLD,
+                    color="#94A3B8",
+                    text_align=ft.TextAlign.CENTER,
+                ),
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=1,
+            tight=True,
+        ),
+    )
+
+
+def build_in_development_view(module_name: str) -> ft.Control:
+    return ft.Container(
+        alignment=ft.alignment.center,
+        expand=True,
+        content=ft.Column(
+            controls=[
+                ft.Icon(ft.icons.CONSTRUCTION, size=64, color="#1976D2"),
+                ft.Text(module_name, size=24, weight=ft.FontWeight.BOLD, color="#263238"),
+                ft.Text("Раздел находится в разработке", size=14, color="#78909C"),
+            ],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER,
+            tight=True,
+            spacing=10,
+        ),
+    )
+
 
 def main(page: ft.Page):
     page.title = f"REapps v{CURRENT_VERSION} - Внутренняя система"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
+
+    icon_relative_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
+    if os.path.exists(icon_relative_path):
+        page.window.icon = icon_relative_path
 
     page.locale_configuration = ft.LocaleConfiguration(
         supported_locales=[ft.Locale("ru", "RU")],
@@ -102,11 +206,14 @@ def main(page: ft.Page):
                 status_lbl.color = "#D32F2F"
                 page.update()
 
-            download_and_install_update(
-                download_url=download_url,
-                on_progress=on_progress,
-                on_error=on_err,
-            )
+            def run_update_thread():
+                download_and_install_update(
+                    download_url=download_url,
+                    on_progress=on_progress,
+                    on_error=on_err,
+                )
+
+            threading.Thread(target=run_update_thread, daemon=True).start()
 
         btn_update.on_click = do_update
         btn_cancel.on_click = close_dlg
@@ -154,9 +261,7 @@ def main(page: ft.Page):
         update_checked["done"] = True
 
         def _worker():
-            print("[Updater] Проверка обновлений на GitHub...")
             info = check_for_updates()
-            print(f"[Updater] Ответ от GitHub: {info}")
             if info:
                 try:
                     if hasattr(page, "run_thread"):
@@ -166,7 +271,6 @@ def main(page: ft.Page):
                     else:
                         prompt_update_dialog(info)
                 except Exception as ex:
-                    print(f"[Updater ERROR] Ошибка показа окна: {ex}")
                     prompt_update_dialog(info)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -177,10 +281,11 @@ def main(page: ft.Page):
             ft.Container(
                 content=ft.Column(
                     controls=[
-                        ft.Icon(ft.icons.APARTMENT, size=64, color="#1976D2"),
-                        ft.Text("REapps", size=28, weight=ft.FontWeight.BOLD, color="#0D47A1"),
-                        ft.Container(height=10),
-                        ft.ProgressRing(width=36, height=36, stroke_width=3, color="#1976D2"),
+                        build_brand_logo_widget(size=88),
+                        ft.Container(height=12),
+                        ft.Text("REapps", size=26, weight=ft.FontWeight.BOLD, color="#0D47A1"),
+                        ft.Container(height=8),
+                        ft.ProgressRing(width=34, height=34, stroke_width=3, color="#1976D2"),
                         ft.Container(height=10),
                         splash_status,
                     ],
@@ -190,7 +295,7 @@ def main(page: ft.Page):
                 ),
                 alignment=ft.alignment.center,
                 expand=True,
-                bgcolor="#F5F7FA",
+                bgcolor="#F8FAFC",
             )
         )
         page.update()
@@ -239,7 +344,8 @@ def main(page: ft.Page):
                         padding=35,
                         content=ft.Column(
                             controls=[
-                                ft.Icon(ft.icons.LOCK_PERSON_OUTLINED, size=52, color="#1976D2"),
+                                build_brand_logo_widget(size=72),
+                                ft.Container(height=6),
                                 ft.Text("Вход в REapps", size=22, weight=ft.FontWeight.BOLD),
                                 ft.Text("Введите учетные данные для доступа", size=12, color="#757575"),
                                 ft.Container(height=10),
@@ -258,7 +364,7 @@ def main(page: ft.Page):
                 ),
                 alignment=ft.alignment.center,
                 expand=True,
-                bgcolor="#F5F7FA",
+                bgcolor="#F8FAFC",
             )
         )
         page.update()
@@ -435,7 +541,7 @@ def main(page: ft.Page):
 
     sidebar_container = ft.Container(
         width=240,
-        bgcolor="#F5F7FA",
+        bgcolor="#F8FAFC",
         padding=ft.padding.symmetric(horizontal=8, vertical=12),
     )
 
@@ -443,28 +549,58 @@ def main(page: ft.Page):
         user = current_user["data"]
         menu_items = []
 
-        def make_nav_item(title: str, icon: str, key: str, is_subitem: bool = False):
+        def make_nav_item(title: str, icon: str, key: str, is_subitem: bool = False, badge: str | None = None):
             is_active = (active_nav_key["val"] == key)
-            c = ft.Container(
-                content=ft.Row(
-                    [
-                        ft.Icon(icon, size=17, color="#1976D2" if is_active else "#616161"),
-                        ft.Text(title, size=13, weight=ft.FontWeight.BOLD if is_active else ft.FontWeight.W_500),
-                    ],
-                    spacing=10,
-                ),
-                padding=ft.padding.only(left=22 if is_subitem else 12, top=9, bottom=9, right=10),
-                border_radius=8,
-                bgcolor="#E3F2FD" if is_active else ft.colors.TRANSPARENT,
+
+            default_bg = "#EBF3FC" if is_active else ft.colors.TRANSPARENT
+            hover_bg = "#E1ECF9" if is_active else "#F1F5F9"
+            icon_color = "#1565C0" if is_active else "#64748B"
+            text_color = "#0D47A1" if is_active else "#334155"
+            text_weight = ft.FontWeight.BOLD if is_active else ft.FontWeight.W_500
+
+            indicator = ft.Container(
+                width=3,
+                height=18,
+                border_radius=2,
+                bgcolor="#1976D2" if is_active else ft.colors.TRANSPARENT,
+            )
+
+            label_row_controls = [
+                indicator,
+                ft.Icon(icon, size=16, color=icon_color),
+                ft.Text(title, size=13, weight=text_weight, color=text_color, expand=True),
+            ]
+
+            if badge:
+                label_row_controls.append(
+                    ft.Container(
+                        content=ft.Text(badge, size=9, color="#64748B", weight=ft.FontWeight.W_600),
+                        bgcolor="#E2E8F0",
+                        padding=ft.padding.symmetric(horizontal=5, vertical=2),
+                        border_radius=4,
+                    )
+                )
+
+            item_container = ft.Container(
+                content=ft.Row(label_row_controls, spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.only(left=10 if is_subitem else 6, top=7, bottom=7, right=8),
+                border_radius=6,
+                bgcolor=default_bg,
                 on_click=lambda e, k=key: load_module_by_key(k),
             )
-            return c
+
+            def on_item_hover(e):
+                item_container.bgcolor = hover_bg if e.data == "true" else default_bg
+                item_container.update()
+
+            item_container.on_hover = on_item_hover
+            return item_container
 
         if user.get("can_meetings"):
             menu_items.append(
                 ft.ExpansionTile(
-                    leading=ft.Icon(ft.icons.CALENDAR_MONTH, color="#616161", size=20),
-                    title=ft.Text("Встречи", size=13, weight=ft.FontWeight.W_600),
+                    leading=ft.Icon(ft.icons.CALENDAR_MONTH, color="#64748B", size=18),
+                    title=ft.Text("Встречи", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
                     controls=[
                         make_nav_item("Назначение встречи", ft.icons.ADD_TASK, "meetings_book", True),
                         make_nav_item("Расписание встреч", ft.icons.VIEW_TIMELINE, "meetings_schedule", True),
@@ -477,8 +613,8 @@ def main(page: ft.Page):
         if user.get("can_transcription"):
             menu_items.append(
                 ft.ExpansionTile(
-                    leading=ft.Icon(ft.icons.MIC, color="#616161", size=20),
-                    title=ft.Text("Транскрибация", size=13, weight=ft.FontWeight.W_600),
+                    leading=ft.Icon(ft.icons.MIC, color="#64748B", size=18),
+                    title=ft.Text("Транскрибация", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
                     controls=[
                         make_nav_item("Разбор звонка / встречи", ft.icons.RECORD_VOICE_OVER, "transcription_single", True),
                         make_nav_item("Анализ разборов (пакетный)", ft.icons.ANALYTICS_OUTLINED, "transcription_batch", True),
@@ -491,25 +627,25 @@ def main(page: ft.Page):
         if user.get("can_calculator"):
             menu_items.append(
                 ft.ExpansionTile(
-                    leading=ft.Icon(ft.icons.CALCULATE, color="#616161", size=20),
-                    title=ft.Text("Калькулятор", size=13, weight=ft.FontWeight.W_600),
+                    leading=ft.Icon(ft.icons.CALCULATE, color="#64748B", size=18),
+                    title=ft.Text("Калькулятор", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
                     controls=[
                         make_nav_item("Калькулятор ДП", ft.icons.DRAW_OUTLINED, "calculator_dp", True),
-                        make_nav_item("Калькулятор ремонта", ft.icons.HOME_REPAIR_SERVICE_OUTLINED, "calculator_repair", True),
-                        make_nav_item("Смета", ft.icons.REQUEST_QUOTE_OUTLINED, "estimate", True),
+                        make_nav_item("Калькулятор ремонта", ft.icons.HOME_REPAIR_SERVICE_OUTLINED, "calculator_repair", True, badge="в разработке"),
+                        make_nav_item("Смета", ft.icons.REQUEST_QUOTE_OUTLINED, "estimate", True, badge="в разработке"),
                     ],
-                    initially_expanded=active_nav_key["val"].startswith("calculator_"),
+                    initially_expanded=active_nav_key["val"].startswith("calculator_") or active_nav_key["val"] == "estimate",
                 )
             )
 
         if user.get("can_reports"):
-            menu_items.append(make_nav_item("Отчеты", ft.icons.INSERT_CHART_OUTLINED, "reports", False))
+            menu_items.append(make_nav_item("Отчеты", ft.icons.INSERT_CHART_OUTLINED, "reports", False, badge="в разработке"))
 
         if user.get("can_access_settings"):
             menu_items.append(
                 ft.ExpansionTile(
-                    leading=ft.Icon(ft.icons.SETTINGS, color="#616161", size=20),
-                    title=ft.Text("Настройки", size=13, weight=ft.FontWeight.W_600),
+                    leading=ft.Icon(ft.icons.SETTINGS, color="#64748B", size=18),
+                    title=ft.Text("Настройки", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
                     controls=[
                         make_nav_item("Доступы", ft.icons.ADMIN_PANEL_SETTINGS_OUTLINED, "access", True),
                         make_nav_item("Ссылки", ft.icons.LINK, "links", True),
@@ -576,7 +712,7 @@ def main(page: ft.Page):
             controls=[
                 ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.icons.APARTMENT, color="#1976D2", size=22),
+                        build_brand_logo_widget(size=30),
                         ft.Text("REapps", size=17, weight=ft.FontWeight.BOLD),
                         ft.Container(
                             bgcolor="#E3F2FD",
@@ -584,22 +720,23 @@ def main(page: ft.Page):
                             border_radius=4,
                             content=ft.Text(f"v{CURRENT_VERSION}", size=9, color="#1976D2", weight=ft.FontWeight.BOLD)
                         ),
-                    ], spacing=6),
-                    padding=ft.padding.only(left=8, bottom=10, top=4),
+                    ], spacing=8),
+                    padding=ft.padding.only(left=8, bottom=8, top=4),
                 ),
                 ft.Divider(height=1),
-                ft.Column(controls=menu_items, spacing=4, expand=True, scroll=ft.ScrollMode.AUTO),
+                ft.Column(controls=menu_items, spacing=2, expand=True, scroll=ft.ScrollMode.AUTO),
                 ft.Divider(height=1),
                 vpn_widget,
                 user_card,
             ],
-            spacing=8,
+            spacing=6,
             expand=True,
         )
 
     def load_module_by_key(key: str):
         active_nav_key["val"] = key
         user = current_user["data"]
+
         if key.startswith("meetings_"):
             if not controllers_cache["meetings"]:
                 controllers_cache["meetings"] = MeetingsController(page, user)
@@ -620,6 +757,12 @@ def main(page: ft.Page):
             if not controllers_cache["calc_dp"]:
                 controllers_cache["calc_dp"] = DPView(page, user)
             content_area.content = controllers_cache["calc_dp"]
+        elif key == "calculator_repair":
+            content_area.content = build_in_development_view("Калькулятор ремонта")
+        elif key == "estimate":
+            content_area.content = build_in_development_view("Смета")
+        elif key == "reports":
+            content_area.content = build_in_development_view("Отчеты")
         elif key == "access":
             if not controllers_cache["access"]:
                 controllers_cache["access"] = AccessView(page, user)
@@ -628,6 +771,7 @@ def main(page: ft.Page):
             if not controllers_cache["links"]:
                 controllers_cache["links"] = LinksView(page)
             content_area.content = controllers_cache["links"]
+
         render_sidebar()
         page.update()
 
@@ -677,4 +821,7 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
+    setup_windows_environment()
+    if not ensure_single_instance():
+        sys.exit(0)
     ft.app(target=main)

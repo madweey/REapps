@@ -1,6 +1,6 @@
 ; Скрипт создания установщика Inno Setup для Ассистент RE
 #define MyAppName "Ассистент RE"
-#define MyAppVersion "1.0.5"
+#define MyAppVersion "1.0.6"
 #define MyAppPublisher "RE Design Buro"
 #define MyAppExeName "REapps.exe"
 
@@ -12,7 +12,7 @@ AppPublisher=RE / DESIGN BURO
 DefaultDirName={autopf}\REdesign
 DefaultGroupName=REdesign
 OutputDir=dist_installer
-OutputBaseFilename=REdesign_Setup_v1.0.5
+OutputBaseFilename=REdesign_Setup_v1.0.6
 SetupIconFile=app_icon.ico
 Compression=lzma
 SolidCompression=yes

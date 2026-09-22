@@ -9,13 +9,12 @@ import subprocess
 import requests
 
 from apps.core.vpn_manager import load_tunnel_states, OnDemandTunnel
-from apps.core.sheets import get_split_vpn_keys
+from apps.core.sheets import get_split_vpn_keys, get_gemini_api_key_from_sheet
 
 BASE_APPDATA = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "REapps")
 TEMP_DIR = os.path.join(BASE_APPDATA, "temp_audio")
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-GEMINI_API_KEY = "AQ.Ab8RN6JRNbA9LGwAWcx1pBJOltB4fSn69oBnsbR3YKhIg5F6BQ"
 MODEL_NAME = "gemini-3.6-flash"
 
 
@@ -30,37 +29,34 @@ def get_binary_path(binary_name: str) -> str:
     """Ищет бинарник в _MEIPASS, рядом с .exe, в корне проекта или возвращает системное имя."""
     exe_name = f"{binary_name}.exe" if sys.platform == "win32" and not binary_name.endswith(".exe") else binary_name
 
-    # 1. Временная распаковка PyInstaller (_MEIPASS / _internal)
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         p = os.path.join(meipass, exe_name)
         if os.path.exists(p):
             return p
 
-    # 2. Рядом с самим файлом REapps.exe
     if getattr(sys, "frozen", False):
         p = os.path.join(os.path.dirname(sys.executable), exe_name)
         if os.path.exists(p):
             return p
 
-    # 3. Корень рабочей папки проекта
     p = os.path.join(get_bundle_dir(), exe_name)
     if os.path.exists(p):
         return p
 
-    # 4. Системный PATH
     return binary_name
 
 
-def configure_gemini(api_key: str | None = None) -> bool:
-    return True
+def get_current_gemini_key() -> str:
+    api_key = get_gemini_api_key_from_sheet()
+    if not api_key:
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+    return api_key.strip()
 
 
-def get_gemini_headers() -> dict:
-    return {
-        "Content-Type": "application/json",
-        "X-goog-api-key": GEMINI_API_KEY,
-    }
+def get_gemini_url(model: str) -> str:
+    key = get_current_gemini_key()
+    return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
 
 def get_yandex_disk_direct_download_url(public_url: str) -> str:
@@ -156,6 +152,10 @@ def extract_audio_with_ffmpeg(input_path: str, progress_callback=None) -> str:
 
 
 def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callback=None) -> dict:
+    key = get_current_gemini_key()
+    if not key:
+        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11)!")
+
     if progress_callback:
         progress_callback("Чтение и кодирование звука...")
 
@@ -175,8 +175,8 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
         "(2-3 емких ключевых предложения с итогом разговора для CRM)"
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
-    headers = get_gemini_headers()
+    url = get_gemini_url(MODEL_NAME)
+    headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
             {
@@ -285,6 +285,10 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
 
 
 def analyze_batch_summaries_with_gemini(summaries: list[dict], meta_prompt: str) -> str:
+    key = get_current_gemini_key()
+    if not key:
+        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11)!")
+
     context_lines = []
     for idx, s in enumerate(summaries, start=1):
         context_lines.append(
@@ -301,8 +305,8 @@ def analyze_batch_summaries_with_gemini(summaries: list[dict], meta_prompt: str)
         "Сформируй четкий аналитический отчет."
     )
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
-    headers = get_gemini_headers()
+    url = get_gemini_url(MODEL_NAME)
+    headers = {"Content-Type": "application/json"}
     payload = {"contents": [{"parts": [{"text": instruction}]}]}
 
     _, enable_foreign = load_tunnel_states()
