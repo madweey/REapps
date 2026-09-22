@@ -1,4 +1,13 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# Жесткая фиксация часового пояса Москвы (UTC+3) для всех клиентов
+MSK_TZ = timezone(timedelta(hours=3))
+
+
+def get_now_msk() -> datetime:
+    """Возвращает текущую дату и время строго по Москве (MSK, UTC+3)."""
+    return datetime.now(MSK_TZ)
+
 
 DEFAULT_SLOTS = [
     "11:00",
@@ -29,28 +38,28 @@ def calculate_end_time(start_str: str, duration_minutes: int = MEETING_DURATION_
 
 def evaluate_slot_status(slot_time_str: str, existing_meetings: list[dict], target_date_str: str | None = None) -> dict:
     """
-    Проверяет доступность слота с учётом занятости и текущего времени суток.
+    Проверяет доступность слота с учётом занятости и текущего времени суток (по Москве).
     """
-    # 1. Проверка на прошедшее время для сегодняшнего дня
+    # 1. Проверка на прошедшее время для сегодняшнего дня строго по МСК
     if target_date_str:
         try:
             target_date = datetime.strptime(target_date_str.strip(), "%d.%m.%Y").date()
-            now = datetime.now()
-            today_date = now.date()
+            now_msk = get_now_msk()
+            today_msk = now_msk.date()
 
-            if target_date < today_date:
+            if target_date < today_msk:
                 return {
                     "status": "BUSY",
-                    "reason": "Дата уже прошла",
+                    "reason": "Дата уже прошла (по МСК)",
                     "color": "#9E9E9E",
                 }
-            elif target_date == today_date:
+            elif target_date == today_msk:
                 slot_time = parse_time_str(slot_time_str).time()
-                current_time = now.time()
-                if slot_time <= current_time:
+                current_msk_time = now_msk.time()
+                if slot_time <= current_msk_time:
                     return {
                         "status": "BUSY",
-                        "reason": "Время уже прошло",
+                        "reason": "Время уже прошло (по МСК)",
                         "color": "#9E9E9E",
                     }
         except Exception:
@@ -95,7 +104,7 @@ def evaluate_slot_status(slot_time_str: str, existing_meetings: list[dict], targ
 
     return {
         "status": "FREE",
-        "reason": "Свободно для записи",
+        "reason": "Свободно для записи (МСК)",
         "color": "#4CAF50",
     }
 

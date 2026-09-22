@@ -1,156 +1,139 @@
+from datetime import datetime
 from apps.core.sheets_client import get_main_spreadsheet
 
 
-def get_meetings_worksheet():
-    return get_main_spreadsheet().worksheet("Встречи")
-
-
-def get_all_meetings() -> list[dict]:
+def get_meetings_data() -> list[dict]:
+    """Извлекает все встречи из листа 'Встречи'."""
     try:
-        sheet = get_meetings_worksheet()
-        values = sheet.get_all_values()
-        if not values or len(values) < 2:
+        sh = get_main_spreadsheet()
+        ws = sh.worksheet("Встречи")
+        rows = ws.get_all_values()
+        if len(rows) <= 1:
             return []
 
         meetings = []
-        for idx, row in enumerate(values[1:], start=2):
-            if not row or not any(row):
+        for idx, r in enumerate(rows[1:], start=2):
+            if not any(r):
                 continue
             item = {
                 "row_idx": idx,
-                "date": row[0].strip() if len(row) > 0 else "",
-                "start": row[1].strip() if len(row) > 1 else "",
-                "end": row[2].strip() if len(row) > 2 else "",
-                "manager": row[3].strip() if len(row) > 3 else "",
-                "client": row[4].strip() if len(row) > 4 else "",
-                "deal_id": row[5].strip() if len(row) > 5 else "",
-                "complex": row[6].strip() if len(row) > 6 else "",
-                "area": row[7].strip() if len(row) > 7 else "",
-                "deal_url": row[8].strip() if len(row) > 8 else "",
-                "call_url": row[9].strip() if len(row) > 9 else "",
-                "comment": row[10].strip() if len(row) > 10 else "",
-                "hooks": row[11].strip() if len(row) > 11 else "",
-                "feedback": row[12].strip() if len(row) > 12 else "",
-                "meeting_url": row[13].strip() if len(row) > 13 else "",
-                "transcription": row[14].strip() if len(row) > 14 else "",
-                "gpt_summary": row[15].strip() if len(row) > 15 else "",
-                "meeting_type": row[16].strip() if len(row) > 16 else "Онлайн встреча",
-                "status": row[17].strip() if len(row) > 17 else "Ожидает подтверждения",
-                "host_manager": row[18].strip() if len(row) > 18 else "",
-                "created_by": row[19].strip() if len(row) > 19 else "",
+                "date": r[0] if len(r) > 0 else "",
+                "start": r[1] if len(r) > 1 else "",
+                "end": r[2] if len(r) > 2 else "",
+                "manager": r[3] if len(r) > 3 else "",
+                "client": r[4] if len(r) > 4 else "",
+                "deal_id": r[5] if len(r) > 5 else "",
+                "complex": r[6] if len(r) > 6 else "",
+                "area": r[7] if len(r) > 7 else "",
+                "deal_url": r[8] if len(r) > 8 else "",
+                "call_url": r[9] if len(r) > 9 else "",
+                "comment": r[10] if len(r) > 10 else "",
+                "hooks": r[11] if len(r) > 11 else "",
+                "feedback": r[12] if len(r) > 12 else "",
+                "meeting_url": r[13] if len(r) > 13 else "",
+                "transcription": r[14] if len(r) > 14 else "",
+                "gpt_summary": r[15] if len(r) > 15 else "",
+                "meeting_type": r[16] if len(r) > 16 else "Онлайн встреча",
+                "status": r[17] if len(r) > 17 else "Ожидает подтверждения",
+                "host_manager": r[18] if len(r) > 18 else "",
+                "created_by": r[19] if len(r) > 19 else "",
             }
-            if not item["status"]:
-                item["status"] = "Ожидает подтверждения"
-            if not item["meeting_type"]:
-                item["meeting_type"] = "Онлайн встреча"
             meetings.append(item)
         return meetings
     except Exception as e:
-        print(f"Ошибка загрузки встреч: {e}")
+        print(f"Ошибка при чтении встреч: {e}")
         return []
 
 
-def get_meetings_data() -> list[dict]:
-    return get_all_meetings()
+# Псевдоним для поддержки обоих вариантов вызова
+get_all_meetings = get_meetings_data
 
 
-def get_meetings_by_date(target_date: str) -> list[dict]:
-    all_meetings = get_all_meetings()
-    t_clean = target_date.strip()
-    return [m for m in all_meetings if m.get("date", "").strip() == t_clean]
+def get_meetings_by_date(target_date_str: str) -> list[dict]:
+    """Возвращает список встреч на указанную дату."""
+    all_m = get_meetings_data()
+    return [m for m in all_m if m.get("date", "").strip() == target_date_str.strip()]
 
 
-def save_new_meeting(payload: dict) -> bool:
-    try:
-        sheet = get_meetings_worksheet()
-        row = [
-            payload.get("date", ""),
-            payload.get("start", ""),
-            payload.get("end", ""),
-            payload.get("manager", ""),
-            payload.get("client", ""),
-            payload.get("deal_id", ""),
-            payload.get("complex", ""),
-            payload.get("area", ""),
-            payload.get("deal_url", ""),
-            payload.get("call_url", ""),
-            payload.get("comment", ""),
-            payload.get("hooks", ""),
-            payload.get("feedback", ""),
-            payload.get("meeting_url", ""),
-            payload.get("transcription", ""),
-            payload.get("gpt_summary", ""),
-            payload.get("meeting_type", "Онлайн встреча"),
-            payload.get("status", "Ожидает подтверждения"),
-            payload.get("host_manager", ""),
-            payload.get("created_by", ""),
-        ]
-        sheet.append_row(row)
-        return True
-    except Exception as e:
-        print(f"Ошибка сохранения встречи: {e}")
-        return False
+def save_new_meeting(data: dict) -> bool:
+    """Добавляет новую строку встречи в таблицу."""
+    sh = get_main_spreadsheet()
+    ws = sh.worksheet("Встречи")
+    row_values = [
+        data.get("date", ""),
+        data.get("start", ""),
+        data.get("end", ""),
+        data.get("manager", ""),
+        data.get("client", ""),
+        data.get("deal_id", ""),
+        data.get("complex", ""),
+        data.get("area", ""),
+        data.get("deal_url", ""),
+        data.get("call_url", ""),
+        data.get("comment", ""),
+        data.get("hooks", ""),
+        data.get("feedback", ""),
+        data.get("meeting_url", ""),
+        data.get("transcription", ""),
+        data.get("gpt_summary", ""),
+        data.get("meeting_type", "Онлайн встреча"),
+        data.get("status", "Ожидает подтверждения"),
+        data.get("host_manager", ""),
+        data.get("created_by", ""),
+    ]
+    ws.append_row(row_values)
+    return True
 
 
 def update_meeting_status(row_idx: int, status: str) -> bool:
-    try:
-        sheet = get_meetings_worksheet()
-        sheet.update_cell(row_idx, 18, status)
-        return True
-    except Exception as e:
-        print(f"Ошибка обновления статуса встречи: {e}")
-        return False
+    """Обновляет статус встречи."""
+    sh = get_main_spreadsheet()
+    ws = sh.worksheet("Встречи")
+    ws.update_cell(row_idx, 18, status)
+    return True
 
 
-def complete_meeting(row_idx: int, feedback: str, recording_url: str) -> bool:
-    try:
-        sheet = get_meetings_worksheet()
-        sheet.update_cell(row_idx, 18, "Встреча проведена")
-        sheet.update_cell(row_idx, 13, feedback)
-        sheet.update_cell(row_idx, 14, recording_url)
-        return True
-    except Exception as e:
-        print(f"Ошибка завершения встречи: {e}")
-        return False
+def update_meeting_details(row_idx: int, details: dict) -> bool:
+    """Обновляет данные встречи при её редактировании."""
+    sh = get_main_spreadsheet()
+    ws = sh.worksheet("Встречи")
+    if "call_url" in details:
+        ws.update_cell(row_idx, 10, details["call_url"])
+    if "comment" in details:
+        ws.update_cell(row_idx, 11, details["comment"])
+    if "hooks" in details:
+        ws.update_cell(row_idx, 12, details["hooks"])
+    if "meeting_type" in details:
+        ws.update_cell(row_idx, 17, details["meeting_type"])
+    if "host_manager" in details:
+        ws.update_cell(row_idx, 19, details["host_manager"])
+    return True
+
+
+def complete_meeting(row_idx: int, feedback: str, meeting_url: str) -> bool:
+    """Фиксирует итоги и переводит встречу в статус 'Встреча проведена'."""
+    sh = get_main_spreadsheet()
+    ws = sh.worksheet("Встречи")
+    ws.update_cell(row_idx, 13, feedback)
+    ws.update_cell(row_idx, 14, meeting_url)
+    ws.update_cell(row_idx, 18, "Встреча проведена")
+    return True
 
 
 def cancel_meeting(row_idx: int, reason: str) -> bool:
-    try:
-        sheet = get_meetings_worksheet()
-        sheet.update_cell(row_idx, 18, "Отказ")
-        old_comm = sheet.cell(row_idx, 11).value or ""
-        new_comm = f"{old_comm} | Отказ: {reason}".strip(" |")
-        sheet.update_cell(row_idx, 11, new_comm)
-        return True
-    except Exception as e:
-        print(f"Ошибка отмены встречи: {e}")
-        return False
+    """Отменяет встречу и записывает причину отмены."""
+    sh = get_main_spreadsheet()
+    ws = sh.worksheet("Встречи")
+    current_comment = ws.cell(row_idx, 11).value or ""
+    new_comment = f"{current_comment} [Причина отмены: {reason}]".strip()
+    ws.update_cell(row_idx, 11, new_comment)
+    ws.update_cell(row_idx, 18, "Отказ")
+    return True
 
 
 def delete_meeting(row_idx: int) -> bool:
-    try:
-        sheet = get_meetings_worksheet()
-        sheet.delete_rows(row_idx)
-        return True
-    except Exception as e:
-        print(f"Ошибка удаления встречи: {e}")
-        return False
-
-
-def update_meeting_details(row_idx: int, updated_fields: dict) -> bool:
-    try:
-        sheet = get_meetings_worksheet()
-        mapping = {
-            "call_url": 10,
-            "comment": 11,
-            "hooks": 12,
-            "meeting_type": 17,
-            "host_manager": 19,
-        }
-        for k, col in mapping.items():
-            if k in updated_fields:
-                sheet.update_cell(row_idx, col, str(updated_fields[k]))
-        return True
-    except Exception as e:
-        print(f"Ошибка сохранения изменений встречи: {e}")
-        return False
+    """Удаляет строку встречи из таблицы."""
+    sh = get_main_spreadsheet()
+    ws = sh.worksheet("Встречи")
+    ws.delete_rows(row_idx)
+    return True

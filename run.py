@@ -13,10 +13,11 @@ from apps.transcription.prompts_view import PromptsView
 from apps.calculator.dp_view import DPView
 from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
+from apps.core.updater import check_for_updates, download_and_install_update, CURRENT_VERSION
 
 
 def main(page: ft.Page):
-    page.title = "REapps - Внутренняя система"
+    page.title = f"REapps v{CURRENT_VERSION} - Внутренняя система"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
 
@@ -28,6 +29,7 @@ def main(page: ft.Page):
     current_user = {"data": None}
     active_nav_key = {"val": "meetings_book"}
     content_area = ft.Container(expand=True)
+    update_checked = {"done": False}
 
     controllers_cache = {
         "meetings": None,
@@ -53,6 +55,103 @@ def main(page: ft.Page):
     )
 
     splash_status = ft.Text("Подключение к Google Таблицам...", size=13, color="#616161")
+
+    # ==========================================
+    # ДИАЛОГ АВТООБНОВЛЕНИЯ
+    # ==========================================
+    def prompt_update_dialog(update_info: dict):
+        prog_bar = ft.ProgressBar(width=420, value=0, visible=False, color="#1976D2")
+        status_lbl = ft.Text("", size=11, color="#616161")
+        btn_update = ft.ElevatedButton("Обновить сейчас", bgcolor="#1976D2", color="#FFFFFF")
+        btn_cancel = ft.TextButton("Напомнить позже")
+
+        def close_dlg(e=None):
+            dlg.open = False
+            page.update()
+
+        def do_update(e):
+            download_url = update_info.get("download_url")
+            if not download_url:
+                status_lbl.value = "Ошибка: исполняемый файл (.exe) не найден в релизе!"
+                status_lbl.color = "#D32F2F"
+                page.update()
+                return
+
+            btn_update.disabled = True
+            btn_cancel.disabled = True
+            prog_bar.visible = True
+            status_lbl.value = "Скачивание обновления..."
+            status_lbl.color = "#1976D2"
+            page.update()
+
+            def on_progress(pct: float):
+                prog_bar.value = pct
+                status_lbl.value = f"Загрузка: {int(pct * 100)}%"
+                page.update()
+
+            def on_err(err_msg: str):
+                btn_update.disabled = False
+                btn_cancel.disabled = False
+                prog_bar.visible = False
+                status_lbl.value = f"Ошибка: {err_msg}"
+                status_lbl.color = "#D32F2F"
+                page.update()
+
+            download_and_install_update(
+                download_url=download_url,
+                on_progress=on_progress,
+                on_error=on_err
+            )
+
+        btn_update.on_click = do_update
+        btn_cancel.on_click = close_dlg
+
+        body_notes = update_info.get("body", "").strip() or "Улучшения стабильности и новые функции."
+
+        dlg = ft.AlertDialog(
+            modal=True,
+            title=ft.Row([
+                ft.Icon(ft.icons.SYSTEM_UPDATE_ROUNDED, color="#1976D2", size=24),
+                ft.Text(f"Доступно обновление {update_info.get('version')}", size=16, weight=ft.FontWeight.BOLD),
+            ]),
+            content=ft.Container(
+                width=450,
+                content=ft.Column(
+                    controls=[
+                        ft.Text(f"Текущая версия: v{CURRENT_VERSION}  ->  Новая: {update_info.get('version')}", size=12, color="#424242"),
+                        ft.Container(height=4),
+                        ft.Text("Что нового:", size=12, weight=ft.FontWeight.BOLD),
+                        ft.Container(
+                            bgcolor="#F4F6F8",
+                            padding=10,
+                            border_radius=6,
+                            content=ft.Text(body_notes, size=11, color="#37474F"),
+                            max_height=140,
+                        ),
+                        prog_bar,
+                        status_lbl,
+                    ],
+                    spacing=8,
+                    tight=True,
+                ),
+            ),
+            actions=[btn_cancel, btn_update],
+        )
+        page.dialog = dlg
+        dlg.open = True
+        page.update()
+
+    def start_background_update_check():
+        if update_checked["done"]:
+            return
+        update_checked["done"] = True
+
+        def _check():
+            info = check_for_updates()
+            if info:
+                prompt_update_dialog(info)
+
+        threading.Thread(target=_check, daemon=True).start()
 
     def render_splash_screen():
         page.clean()
@@ -104,6 +203,7 @@ def main(page: ft.Page):
             clear_session()
         current_user["data"] = user
         render_main_layout()
+        start_background_update_check()
 
     login_btn.on_click = handle_login
     login_pass_input.on_submit = handle_login
@@ -456,7 +556,16 @@ def main(page: ft.Page):
         sidebar_container.content = ft.Column(
             controls=[
                 ft.Container(
-                    content=ft.Row([ft.Icon(ft.icons.APARTMENT, color="#1976D2", size=22), ft.Text("REapps", size=17, weight=ft.FontWeight.BOLD)], spacing=8),
+                    content=ft.Row([
+                        ft.Icon(ft.icons.APARTMENT, color="#1976D2", size=22),
+                        ft.Text("REapps", size=17, weight=ft.FontWeight.BOLD),
+                        ft.Container(
+                            bgcolor="#E3F2FD",
+                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                            border_radius=4,
+                            content=ft.Text(f"v{CURRENT_VERSION}", size=9, color="#1976D2", weight=ft.FontWeight.BOLD)
+                        ),
+                    ], spacing=6),
                     padding=ft.padding.only(left=8, bottom=10, top=4),
                 ),
                 ft.Divider(height=1),
@@ -539,6 +648,7 @@ def main(page: ft.Page):
                     splash_status.value = "Загрузка модулей..."
                     page.update()
                     render_main_layout()
+                    start_background_update_check()
                     return
             render_login_screen()
         except Exception as err:
