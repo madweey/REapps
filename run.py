@@ -17,13 +17,9 @@ from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
 from apps.core.updater import check_for_updates, download_and_install_update, CURRENT_VERSION
 
-# ==========================================
-# WINDOWS APP ID И ЗАЩИТА ОТ ДУБЛИКАТОВ (SINGLE INSTANCE)
-# ==========================================
 MUTEX_HANDLE = None
 
 def get_asset_path(filename: str) -> str:
-    """Ищет файл во временной папке PyInstaller, рядом с .exe или в корне проекта."""
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         p = os.path.join(sys._MEIPASS, filename)
         if os.path.exists(p):
@@ -42,7 +38,6 @@ def get_asset_path(filename: str) -> str:
 
 
 def setup_windows_environment():
-    """Задает жесткий AppUserModelID для корректного отображения иконки в таскбаре Windows."""
     if sys.platform == "win32":
         try:
             myappid = "redesignburo.reapps.client.1.0"
@@ -52,7 +47,6 @@ def setup_windows_environment():
 
 
 def ensure_single_instance() -> bool:
-    """Проверяет запуск копии через мьютекс Windows."""
     global MUTEX_HANDLE
     if sys.platform != "win32":
         return True
@@ -79,7 +73,6 @@ def ensure_single_instance() -> bool:
 
 
 def build_app_icon_control(size: int = 84) -> ft.Control:
-    """Отображает фирменный значок приложения из app_icon.ico."""
     icon_path = get_asset_path("app_icon.ico")
     if os.path.exists(icon_path):
         return ft.Container(
@@ -120,7 +113,7 @@ def build_in_development_view(module_name: str) -> ft.Control:
         expand=True,
         content=ft.Column(
             controls=[
-                ft.Icon(ft.icons.CONSTRUCTION, size=64, color="#1976D2"),
+                ft.Icon(ft.icons.CONSTRUCTION, size=64, color="#0C66E4"),
                 ft.Text(module_name, size=24, weight=ft.FontWeight.BOLD, color="#263238"),
                 ft.Text("Раздел находится в разработке", size=14, color="#78909C"),
             ],
@@ -162,17 +155,18 @@ def main(page: ft.Page):
         "calc_dp": None,
     }
 
-    login_name_input = ft.TextField(label="Имя сотрудника (Логин)", width=320, autofocus=True, height=48)
-    login_pass_input = ft.TextField(label="Пароль", password=True, can_reveal_password=True, width=320, height=48)
+    login_name_input = ft.TextField(label="Имя сотрудника (Логин)", width=320, autofocus=True, height=48, border_radius=12)
+    login_pass_input = ft.TextField(label="Пароль", password=True, can_reveal_password=True, width=320, height=48, border_radius=12)
     remember_checkbox = ft.Checkbox(label="Оставаться в системе", value=True)
     login_error_text = ft.Text("", size=12, color="#D32F2F", weight=ft.FontWeight.W_500)
     login_btn = ft.ElevatedButton(
         "Войти в систему",
         icon=ft.icons.LOGIN,
-        bgcolor="#1976D2",
+        bgcolor="#0C66E4",
         color="#FFFFFF",
         width=320,
         height=45,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)),
     )
 
     splash_status = ft.Text("Подключение к Google Таблицам...", size=13, color="#616161")
@@ -181,14 +175,15 @@ def main(page: ft.Page):
     # ДИАЛОГ АВТООБНОВЛЕНИЯ
     # ==========================================
     def prompt_update_dialog(update_info: dict):
-        prog_bar = ft.ProgressBar(width=420, value=0, visible=False, color="#1976D2")
+        prog_bar = ft.ProgressBar(width=420, value=0, visible=False, color="#0C66E4")
         status_lbl = ft.Text("", size=11, color="#616161")
         has_exe = bool(update_info.get("download_url"))
 
         btn_update = ft.ElevatedButton(
             "Обновить сейчас" if has_exe else "Перейти к релизу",
-            bgcolor="#1976D2",
+            bgcolor="#0C66E4",
             color="#FFFFFF",
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)),
         )
         btn_cancel = ft.TextButton("Напомнить позже")
 
@@ -207,7 +202,7 @@ def main(page: ft.Page):
             btn_cancel.disabled = True
             prog_bar.visible = True
             status_lbl.value = "Скачивание обновления..."
-            status_lbl.color = "#1976D2"
+            status_lbl.color = "#0C66E4"
             page.update()
 
             def on_progress(pct: float):
@@ -224,6 +219,12 @@ def main(page: ft.Page):
                 page.update()
 
             def run_update_thread():
+                # Закрываем GUI-окно Flet перед заменой процесса
+                try:
+                    page.window.close()
+                except Exception:
+                    pass
+
                 download_and_install_update(
                     download_url=download_url,
                     on_progress=on_progress,
@@ -240,7 +241,7 @@ def main(page: ft.Page):
         dlg = ft.AlertDialog(
             modal=True,
             title=ft.Row([
-                ft.Icon(ft.icons.SYSTEM_UPDATE_ROUNDED, color="#1976D2", size=24),
+                ft.Icon(ft.icons.SYSTEM_UPDATE_ROUNDED, color="#0C66E4", size=24),
                 ft.Text(f"Доступно обновление {update_info.get('version')}", size=16, weight=ft.FontWeight.BOLD),
             ]),
             content=ft.Container(
@@ -252,8 +253,8 @@ def main(page: ft.Page):
                         ft.Text("Что нового:", size=12, weight=ft.FontWeight.BOLD),
                         ft.Container(
                             bgcolor="#F4F6F8",
-                            padding=10,
-                            border_radius=6,
+                            padding=12,
+                            border_radius=12,
                             content=ft.Text(body_notes, size=11, color="#37474F"),
                             height=120,
                         ),
@@ -302,7 +303,7 @@ def main(page: ft.Page):
                         ft.Container(height=12),
                         ft.Text("REapps", size=26, weight=ft.FontWeight.BOLD, color="#0D47A1"),
                         ft.Container(height=8),
-                        ft.ProgressRing(width=34, height=34, stroke_width=3, color="#1976D2"),
+                        ft.ProgressRing(width=34, height=34, stroke_width=3, color="#0C66E4"),
                         ft.Container(height=10),
                         splash_status,
                     ],
@@ -326,7 +327,7 @@ def main(page: ft.Page):
             return
         login_btn.disabled = True
         login_error_text.value = "Проверка..."
-        login_error_text.color = "#1976D2"
+        login_error_text.color = "#0C66E4"
         page.update()
 
         user = authenticate(name, pwd)
@@ -356,7 +357,8 @@ def main(page: ft.Page):
         page.add(
             ft.Container(
                 content=ft.Card(
-                    elevation=4,
+                    elevation=3,
+                    shape=ft.RoundedRectangleBorder(radius=20),
                     content=ft.Container(
                         padding=35,
                         content=ft.Column(
@@ -400,8 +402,8 @@ def main(page: ft.Page):
         ru_statuses = {}
         for_statuses = {}
 
-        new_ru_input = ft.TextField(hint_text="Ключ РФ (vless://...)", expand=True, dense=True, text_size=11)
-        new_for_input = ft.TextField(hint_text="Ключ Зарубеж (vless://...)", expand=True, dense=True, text_size=11)
+        new_ru_input = ft.TextField(hint_text="Ключ РФ (vless://...)", expand=True, dense=True, text_size=11, border_radius=10)
+        new_for_input = ft.TextField(hint_text="Ключ Зарубеж (vless://...)", expand=True, dense=True, text_size=11, border_radius=10)
 
         ru_col = ft.Column(spacing=4)
         for_col = ft.Column(spacing=4)
@@ -435,7 +437,7 @@ def main(page: ft.Page):
             return ft.Container(
                 bgcolor="#FFFFFF",
                 border=ft.border.all(1, "#E0E0E0"),
-                border_radius=6,
+                border_radius=8,
                 padding=ft.padding.symmetric(horizontal=8, vertical=4),
                 content=ft.Row(
                     controls=[
@@ -496,7 +498,7 @@ def main(page: ft.Page):
         refresh_dialog_lists()
 
         dlg = ft.AlertDialog(
-            title=ft.Row([ft.Icon(ft.icons.TUNE, color="#1976D2"), ft.Text("Управление туннелями VPN", size=16, weight=ft.FontWeight.BOLD)]),
+            title=ft.Row([ft.Icon(ft.icons.TUNE, color="#0C66E4"), ft.Text("Управление туннелями VPN", size=16, weight=ft.FontWeight.BOLD)]),
             content=ft.Container(
                 width=480,
                 content=ft.Column(
@@ -504,8 +506,8 @@ def main(page: ft.Page):
                         ft.Text("Включается строго по требованию в момент разбора:", size=11, color="#757575"),
                         ft.Container(
                             bgcolor="#F4F8FA",
-                            padding=10,
-                            border_radius=8,
+                            padding=12,
+                            border_radius=12,
                             content=ft.Column(
                                 controls=[
                                     ft.Row(
@@ -518,15 +520,15 @@ def main(page: ft.Page):
                                     ),
                                     ft.Text("Нужен в Ереване для скачивания записей. В РФ выключить.", size=10, color="#757575"),
                                     ru_col,
-                                    ft.Row([new_ru_input, ft.IconButton(ft.icons.ADD_CIRCLE, icon_color="#1976D2", on_click=add_ru_key)], spacing=4),
+                                    ft.Row([new_ru_input, ft.IconButton(ft.icons.ADD_CIRCLE, icon_color="#0C66E4", on_click=add_ru_key)], spacing=4),
                                 ],
                                 spacing=6,
                             )
                         ),
                         ft.Container(
                             bgcolor="#F6F7F9",
-                            padding=10,
-                            border_radius=8,
+                            padding=12,
+                            border_radius=12,
                             content=ft.Column(
                                 controls=[
                                     ft.Row(
@@ -570,18 +572,17 @@ def main(page: ft.Page):
             is_active = (active_nav_key["val"] == key)
             is_loading = is_loading_module["val"] and is_active
 
-            # Если грузится, фон плашки становится более плотным
             default_bg = "#D0E4FA" if is_loading else ("#EBF3FC" if is_active else ft.colors.TRANSPARENT)
             hover_bg = "#C4DCF7" if is_loading else ("#E1ECF9" if is_active else "#F1F5F9")
-            icon_color = "#1565C0" if is_active else "#64748B"
-            text_color = "#0D47A1" if is_active else "#334155"
+            icon_color = "#0C66E4" if is_active else "#64748B"
+            text_color = "#0C66E4" if is_active else "#334155"
             text_weight = ft.FontWeight.BOLD if is_active else ft.FontWeight.W_500
 
             indicator = ft.Container(
                 width=3,
                 height=18,
                 border_radius=2,
-                bgcolor="#1976D2" if is_active else ft.colors.TRANSPARENT,
+                bgcolor="#0C66E4" if is_active else ft.colors.TRANSPARENT,
             )
 
             label_row_controls = [
@@ -600,10 +601,9 @@ def main(page: ft.Page):
                     )
                 )
 
-            # Бегущая строка (Progress Indicator) строго внутри плашки
             item_progress_bar = ft.ProgressBar(
                 height=2,
-                color="#1976D2",
+                color="#0C66E4",
                 bgcolor="#BBDEFB",
                 visible=is_loading,
             )
@@ -620,7 +620,7 @@ def main(page: ft.Page):
             item_container = ft.Container(
                 content=item_column,
                 padding=ft.padding.only(left=10 if is_subitem else 6, top=6, bottom=5, right=8),
-                border_radius=6,
+                border_radius=8,
                 bgcolor=default_bg,
                 on_click=lambda e, k=key: load_module_by_key(k),
             )
@@ -703,7 +703,7 @@ def main(page: ft.Page):
 
         vpn_widget = ft.Container(
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
-            border_radius=8,
+            border_radius=12,
             bgcolor=badge_bg,
             border=ft.border.all(1, "#81C784" if status_parts else "#B0BEC5"),
             content=ft.Row(
@@ -726,11 +726,11 @@ def main(page: ft.Page):
 
         user_card = ft.Container(
             padding=10,
-            border_radius=8,
+            border_radius=12,
             bgcolor="#FFFFFF",
             content=ft.Row(
                 controls=[
-                    ft.Icon(ft.icons.ACCOUNT_CIRCLE, size=32, color="#1976D2"),
+                    ft.Icon(ft.icons.ACCOUNT_CIRCLE, size=32, color="#0C66E4"),
                     ft.Column(
                         controls=[
                             ft.Text(user["name"], size=12, weight=ft.FontWeight.BOLD),
@@ -755,7 +755,7 @@ def main(page: ft.Page):
                             bgcolor="#E3F2FD",
                             padding=ft.padding.symmetric(horizontal=6, vertical=2),
                             border_radius=4,
-                            content=ft.Text(f"v{CURRENT_VERSION}", size=9, color="#1976D2", weight=ft.FontWeight.BOLD)
+                            content=ft.Text(f"v{CURRENT_VERSION}", size=9, color="#0C66E4", weight=ft.FontWeight.BOLD)
                         ),
                     ], spacing=8),
                     padding=ft.padding.only(left=8, bottom=8, top=4),
@@ -771,7 +771,6 @@ def main(page: ft.Page):
         )
 
     def load_module_by_key(key: str):
-        # Защита от повторного вызова активного пункта и двойного клика
         if is_loading_module["val"]:
             return
         if active_nav_key["val"] == key and content_area.content is not None:

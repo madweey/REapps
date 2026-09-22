@@ -91,6 +91,8 @@ class MeetingsController:
 
         self._is_loading_schedule = False
         self._is_loading_registry = False
+        self._is_deleting = False
+        self._is_refreshing_slots = False
 
         try:
             accs = get_all_accounts()
@@ -107,6 +109,8 @@ class MeetingsController:
         self.deal_url_input = ft.TextField(
             label="Ссылка на сделку или ID (amoCRM)",
             hint_text="Вставьте URL или номер сделки amoCRM...",
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
             expand=True,
             height=48,
             filled=True,
@@ -118,7 +122,7 @@ class MeetingsController:
         )
 
         self.info_card_content = ft.Column(
-            controls=[ft.Text("Данные сделки не загружены", italic=True, color="#94A3B8")],
+            controls=[ft.Text("Данные сделки не загружены", italic=True, color="#94A3B8", size=12)],
             spacing=4,
         )
         self.info_card = ft.Container(
@@ -130,11 +134,13 @@ class MeetingsController:
             visible=False,
         )
 
-        # 2. Параметры даты и участников (Шаг 2)
+        # 2. Параметры даты и участников (Шаг 2) — единые шрифты и стиль One UI
         self.date_input = ft.TextField(
             label="Дата встречи",
             hint_text="ДД.ММ.ГГГГ",
             value=datetime.today().strftime("%d.%m.%Y"),
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
             width=175,
             height=48,
             filled=True,
@@ -149,10 +155,11 @@ class MeetingsController:
             ),
         )
 
-        # Убран content_padding, чтобы стрелка не выпадала из поля
         self.meeting_type_dropdown = ft.Dropdown(
             label="Тип встречи",
             value="Онлайн встреча",
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
             width=220,
             height=48,
             filled=True,
@@ -173,6 +180,8 @@ class MeetingsController:
         self.host_manager_dropdown = ft.Dropdown(
             label="Кто проведет встречу",
             value=self.current_username if self.current_username in self.account_names else (self.account_names[0] if self.account_names else ""),
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
             expand=True,
             height=48,
             filled=True,
@@ -219,19 +228,22 @@ class MeetingsController:
         self.custom_time_input = ft.TextField(
             label="Своё время",
             hint_text="11:30",
+            text_size=13,
+            label_style=ft.TextStyle(size=11, color="#64748B"),
             width=140,
             height=42,
             filled=True,
             fill_color="#F1F5F9",
             border=ft.InputBorder.NONE,
             border_radius=14,
-            text_size=12,
             content_padding=ft.padding.symmetric(horizontal=14, vertical=4),
         )
 
         self.call_url_input = ft.TextField(
             label="Ссылка на запись звонка (mp3)",
             hint_text="https://vats.../record.mp3",
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
             height=48,
             filled=True,
             fill_color="#F1F5F9",
@@ -265,6 +277,7 @@ class MeetingsController:
         self.sched_date_from_input = ft.TextField(
             label="С даты", hint_text="ДД.ММ.ГГГГ",
             value=datetime.today().strftime("%d.%m.%Y"),
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=145, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -272,12 +285,14 @@ class MeetingsController:
         self.sched_date_to_input = ft.TextField(
             label="По дату", hint_text="ДД.ММ.ГГГГ",
             value=(datetime.today() + timedelta(days=7)).strftime("%d.%m.%Y"),
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=145, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
         )
         self.sched_host_filter = ft.Dropdown(
             label="Кто проведет", value="Все ведущие",
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=200, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -285,6 +300,7 @@ class MeetingsController:
         )
         self.sched_creator_filter = ft.Dropdown(
             label="Кто записал", value="Все авторы",
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=200, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -296,6 +312,7 @@ class MeetingsController:
         self.reg_date_from_input = ft.TextField(
             label="С даты", hint_text="ДД.ММ.ГГГГ",
             value=datetime.today().strftime("%d.%m.%Y"),
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=145, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -303,13 +320,14 @@ class MeetingsController:
         self.reg_date_to_input = ft.TextField(
             label="По дату", hint_text="ДД.ММ.ГГГГ",
             value=(datetime.today() + timedelta(days=7)).strftime("%d.%m.%Y"),
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=145, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
         )
-        # Достаточная ширина под текст и стрелку, убран content_padding
         self.reg_status_filter = ft.Dropdown(
             label="Статус встречи", value="Все статусы",
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=230, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -323,6 +341,7 @@ class MeetingsController:
         )
         self.reg_host_filter = ft.Dropdown(
             label="Кто проведет", value="Все ведущие",
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=200, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -330,6 +349,7 @@ class MeetingsController:
         )
         self.reg_creator_filter = ft.Dropdown(
             label="Кто записал", value="Все авторы",
+            text_size=13, label_style=ft.TextStyle(size=12, color="#64748B"),
             width=200, height=48,
             filled=True, fill_color="#F1F5F9",
             border=ft.InputBorder.NONE, border_radius=14,
@@ -338,7 +358,7 @@ class MeetingsController:
         self.registry_list = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO)
 
     def _build_modals(self):
-        self.tg_text_field = ft.TextField(multiline=True, min_lines=15, max_lines=19, read_only=True, border_radius=12)
+        self.tg_text_field = ft.TextField(multiline=True, min_lines=15, max_lines=19, read_only=True, border_radius=12, text_size=13)
         self.tg_dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.icons.COPY_ALL_ROUNDED, color="#0C66E4"), ft.Text("Форма для передачи", size=16, weight=ft.FontWeight.BOLD)]),
             content=ft.Container(content=self.tg_text_field, width=500),
@@ -375,11 +395,12 @@ class MeetingsController:
             confirm_text="Выбрать", cancel_text="Отмена", help_text="По дату",
         )
 
-        self.complete_feedback_input = ft.TextField(label="Результат встречи", multiline=True, min_lines=3, border_radius=12)
+        self.complete_feedback_input = ft.TextField(label="Результат встречи", multiline=True, min_lines=3, border_radius=12, text_size=13)
         self.complete_recording_input = ft.TextField(
             label="Ссылка на онлайн встречу (Яндекс.Диск)",
             hint_text="https://disk.yandex.ru/...",
             border_radius=12,
+            text_size=13,
         )
         self.complete_dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.icons.TASK_ALT_ROUNDED, color="#2E7D32"), ft.Text("Итоги встречи", size=16, weight=ft.FontWeight.BOLD)]),
@@ -393,7 +414,7 @@ class MeetingsController:
             ],
         )
 
-        self.cancel_reason_input = ft.TextField(label="Причина отмены встречи", multiline=True, min_lines=3, border_radius=12)
+        self.cancel_reason_input = ft.TextField(label="Причина отмены встречи", multiline=True, min_lines=3, border_radius=12, text_size=13)
         self.cancel_dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.icons.CANCEL_OUTLINED, color="#D32F2F"), ft.Text("Отмена встречи", size=16, weight=ft.FontWeight.BOLD)]),
             content=ft.Container(content=self.cancel_reason_input, width=500),
@@ -403,25 +424,32 @@ class MeetingsController:
             ],
         )
 
-        self.delete_confirm_text = ft.Text("")
+        self.delete_confirm_text = ft.Text("", size=13)
+        self.btn_delete_confirm = ft.ElevatedButton("Удалить", icon=ft.icons.DELETE_FOREVER_ROUNDED, bgcolor="#D32F2F", color=ft.colors.WHITE)
+        self.btn_delete_cancel = ft.TextButton("Отмена")
         self.delete_dialog = ft.AlertDialog(
             title=ft.Row([ft.Icon(ft.icons.DELETE_OUTLINE_ROUNDED, color="#D32F2F"), ft.Text("Удаление встречи", size=16, weight=ft.FontWeight.BOLD)]),
             content=ft.Container(content=self.delete_confirm_text, width=450),
             actions=[
-                ft.TextButton("Отмена", on_click=lambda e: setattr(self.delete_dialog, "open", False) or self.page.update()),
-                ft.ElevatedButton("Удалить", icon=ft.icons.DELETE_FOREVER_ROUNDED, bgcolor="#D32F2F", color=ft.colors.WHITE, on_click=self.on_confirm_delete),
+                self.btn_delete_cancel,
+                self.btn_delete_confirm,
             ],
         )
+
+        self.btn_delete_cancel.on_click = lambda e: setattr(self.delete_dialog, "open", False) or self.page.update()
+        self.btn_delete_confirm.on_click = self.on_confirm_delete
 
         self.edit_call_url_input = ft.TextField(
             label="Ссылка на звонок (mp3)",
             hint_text="https://vats.../record.mp3 или Яндекс.Диск",
             border_radius=12,
+            text_size=13,
         )
         self.edit_host_dropdown = ft.Dropdown(
             label="Кто проведет встречу",
             options=[ft.dropdown.Option(name) for name in self.account_names],
             border_radius=12,
+            text_size=13,
         )
         self.edit_type_dropdown = ft.Dropdown(
             label="Тип встречи",
@@ -430,9 +458,10 @@ class MeetingsController:
                 ft.dropdown.Option("Звонок"),
             ],
             border_radius=12,
+            text_size=13,
         )
-        self.edit_hooks_input = ft.TextField(label="Крючки", multiline=True, min_lines=2, max_lines=3, border_radius=12)
-        self.edit_comment_input = ft.TextField(label="Комментарий", multiline=True, min_lines=2, max_lines=3, border_radius=12)
+        self.edit_hooks_input = ft.TextField(label="Крючки", multiline=True, min_lines=2, max_lines=3, border_radius=12, text_size=13)
+        self.edit_comment_input = ft.TextField(label="Комментарий", multiline=True, min_lines=2, max_lines=3, border_radius=12, text_size=13)
         self.edit_status_text = ft.Text("", size=12, weight=ft.FontWeight.W_500)
 
         self.edit_dialog = ft.AlertDialog(
@@ -482,13 +511,14 @@ class MeetingsController:
             actions=[ft.TextButton("Закрыть", on_click=lambda e: self.close_detail_dialog())],
         )
 
-        self.meeting_ai_prompt_dd = ft.Dropdown(label="Шаблон промта", width=480, height=48, border_radius=12)
+        self.meeting_ai_prompt_dd = ft.Dropdown(label="Шаблон промта", width=480, height=48, border_radius=12, text_size=13)
         self.meeting_ai_custom_input = ft.TextField(
             label="Инструкция для ИИ",
             multiline=True,
             min_lines=2,
             max_lines=5,
             border_radius=12,
+            text_size=13,
             hint_text="Отредактируйте или введите свой запрос к ИИ...",
         )
         self.meeting_ai_status = ft.Text("", size=12, color="#0C66E4")
@@ -499,6 +529,7 @@ class MeetingsController:
             min_lines=8,
             max_lines=14,
             border_radius=12,
+            text_size=13,
             read_only=True,
         )
 
@@ -651,55 +682,62 @@ class MeetingsController:
         return filtered
 
     def refresh_slots(self):
-        self.slots_row.controls.clear()
-        target_date = self.date_input.value.strip()
-        host_meetings = self.get_host_filtered_meetings(target_date)
+        if self._is_refreshing_slots:
+            return
+        self._is_refreshing_slots = True
 
-        grid = get_day_schedule_grid(host_meetings, target_date)
+        try:
+            target_date = self.date_input.value.strip()
+            host_meetings = self.get_host_filtered_meetings(target_date)
+            grid = get_day_schedule_grid(host_meetings, target_date)
 
-        for item in grid:
-            time_val = item["time"]
-            color_val = item["color"]
-            status_val = item["status"]
-            reason_val = item["reason"]
+            new_buttons = []
+            for item in grid:
+                time_val = item["time"]
+                status_val = item["status"]
+                reason_val = item["reason"]
 
-            is_selected = (self.selected_time["start"] == time_val and self.selected_time["start"] != "")
+                is_selected = (self.selected_time["start"] == time_val and self.selected_time["start"] != "")
 
-            if is_selected:
-                bg_color = "#0C66E4"
-                txt_color = "#FFFFFF"
-                border_color = "#0C66E4"
-                icon_control = ft.icons.CHECK_ROUNDED
-            elif status_val == "BUSY":
-                bg_color = "#F1F5F9"
-                txt_color = "#94A3B8"
-                border_color = "#E2E8F0"
-                icon_control = None
-            else:
-                bg_color = "#FFFFFF"
-                txt_color = "#0F172A"
-                border_color = "#CBD5E1"
-                icon_control = None
+                if is_selected:
+                    bg_color = "#0C66E4"
+                    txt_color = "#FFFFFF"
+                    border_color = "#0C66E4"
+                    icon_control = ft.icons.CHECK_ROUNDED
+                elif status_val == "BUSY":
+                    bg_color = "#F1F5F9"
+                    txt_color = "#94A3B8"
+                    border_color = "#E2E8F0"
+                    icon_control = None
+                else:
+                    bg_color = "#FFFFFF"
+                    txt_color = "#0F172A"
+                    border_color = "#CBD5E1"
+                    icon_control = None
 
-            btn = ft.Container(
-                content=ft.Row(
-                    controls=[
-                        ft.Icon(icon_control, size=14, color=txt_color) if icon_control else ft.Container(),
-                        ft.Text(time_val, size=13, weight=ft.FontWeight.W_600, color=txt_color),
-                    ],
-                    spacing=4,
-                    alignment=ft.MainAxisAlignment.CENTER,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    tight=True,
-                ),
-                padding=ft.padding.symmetric(horizontal=14, vertical=9),
-                border_radius=12,
-                bgcolor=bg_color,
-                border=ft.border.all(1, border_color),
-                on_click=None if status_val == "BUSY" else (lambda e, t=time_val, r=reason_val: self.set_slot(t, r)),
-            )
-            self.slots_row.controls.append(btn)
-        self.page.update()
+                btn = ft.Container(
+                    content=ft.Row(
+                        controls=[
+                            ft.Icon(icon_control, size=14, color=txt_color) if icon_control else ft.Container(),
+                            ft.Text(time_val, size=13, weight=ft.FontWeight.W_600, color=txt_color),
+                        ],
+                        spacing=4,
+                        alignment=ft.MainAxisAlignment.CENTER,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        tight=True,
+                    ),
+                    padding=ft.padding.symmetric(horizontal=14, vertical=9),
+                    border_radius=12,
+                    bgcolor=bg_color,
+                    border=ft.border.all(1, border_color),
+                    on_click=None if status_val == "BUSY" else (lambda e, t=time_val, r=reason_val: self.set_slot(t, r)),
+                )
+                new_buttons.append(btn)
+
+            self.slots_row.controls = new_buttons
+            self.page.update()
+        finally:
+            self._is_refreshing_slots = False
 
     def set_slot(self, time_str: str, reason: str):
         self.selected_time["start"] = time_str
@@ -782,7 +820,7 @@ class MeetingsController:
                 self.deal_verified = False
                 self.btn_book_meeting.disabled = True
                 self.btn_tg_form.disabled = True
-                self.info_card_content.controls = [ft.Text("Сделка не найдена в таблице", color="#DC2626")]
+                self.info_card_content.controls = [ft.Text("Сделка не найдена в таблице", color="#DC2626", size=12)]
                 self.info_card.visible = True
                 self.save_status_text.value = "Сделка не найдена!"
                 self.save_status_text.color = "#DC2626"
@@ -790,7 +828,7 @@ class MeetingsController:
             self.deal_verified = False
             self.btn_book_meeting.disabled = True
             self.btn_tg_form.disabled = True
-            self.info_card_content.controls = [ft.Text(f"Ошибка загрузки: {err}", color="#DC2626")]
+            self.info_card_content.controls = [ft.Text(f"Ошибка загрузки: {err}", color="#DC2626", size=12)]
             self.info_card.visible = True
             self.save_status_text.value = f"Ошибка: {err}"
             self.save_status_text.color = "#DC2626"
@@ -940,6 +978,7 @@ class MeetingsController:
             bgcolor="#E9F2FF" if is_online else "#FEF3C7",
         )
 
+        card_progress_bar = ft.ProgressBar(height=2, color="#D32F2F", bgcolor="#FFCDD2", visible=False)
         status_controls = []
 
         def handle_confirm(e, idx=row_idx):
@@ -961,12 +1000,17 @@ class MeetingsController:
             self.cancel_dialog.open = True
             self.page.update()
 
-        def handle_open_delete(e, it=item):
+        def handle_open_delete(e, it=item, prog=card_progress_bar):
+            if self._is_deleting:
+                return
             self.action_context["meeting"] = it
+            self.action_context["card_progress"] = prog
             client_name = it.get("client") or "без имени"
             meeting_date = it.get("date") or ""
             meeting_time = it.get("start") or ""
             self.delete_confirm_text.value = f"Удалить встречу клиента '{client_name}' на {meeting_date} ({meeting_time})?"
+            self.btn_delete_confirm.disabled = False
+            self.btn_delete_confirm.text = "Удалить"
             self.delete_dialog.open = True
             self.page.update()
 
@@ -1023,53 +1067,61 @@ class MeetingsController:
             on_click=lambda e, it=item: self.open_edit_dialog(it),
         )
 
-        delete_btn = ft.IconButton(icon=ft.icons.DELETE_OUTLINE_ROUNDED, tooltip="Удалить встречу", icon_color="#EF4444", on_click=lambda e, it=item: handle_open_delete(e, it))
+        delete_btn = ft.IconButton(
+            icon=ft.icons.DELETE_OUTLINE_ROUNDED,
+            tooltip="Удалить встречу",
+            icon_color="#EF4444",
+            on_click=lambda e, it=item, p=card_progress_bar: handle_open_delete(e, it, p),
+        )
+
+        card_body = ft.Column(
+            controls=[
+                card_progress_bar,
+                ft.Row(
+                    controls=[
+                        ft.Row([ft.Text(f"🕒 {item['start']} - {item['end']}", size=15, weight=ft.FontWeight.BOLD), type_badge], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Text(f"📅 {item['date']} | 🏢 {item['complex']} ({item['area']} м²)", weight=ft.FontWeight.W_500, color="#334155"),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Text(f"Клиент: {item['client']} | Менеджер CRM: {crm_m}", size=13),
+                ft.Row(
+                    controls=[
+                        ft.Container(content=ft.Row([ft.Icon(ft.icons.PERSON_ROUNDED, size=14, color="#0C66E4"), ft.Text(f"Проведет: {host_m}", size=12, weight=ft.FontWeight.BOLD, color="#0C66E4")], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER), bgcolor="#E9F2FF", padding=ft.padding.symmetric(horizontal=10, vertical=4), border_radius=10),
+                        ft.Container(content=ft.Row([ft.Icon(ft.icons.CREATE_ROUNDED, size=14, color="#64748B"), ft.Text(f"Записал(а): {created_b}", size=12, color="#475569")], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER), bgcolor="#F1F5F9", padding=ft.padding.symmetric(horizontal=10, vertical=4), border_radius=10),
+                    ],
+                    spacing=8,
+                ),
+                ft.Text(f"Крючки: {item['hooks']}", size=12, italic=True, color="#475569") if item.get("hooks") else ft.Container(),
+                ft.Text(f"Комментарий: {item['comment']}", size=12, color="#64748B") if item.get("comment") else ft.Container(),
+                ft.Row(
+                    controls=[
+                        crm_btn,
+                        ft.Row(controls=status_controls, spacing=8, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Row(
+                            controls=[
+                                ft.TextButton("Подробнее и звонок", icon=ft.icons.INFO_OUTLINE_ROUNDED, on_click=lambda e, it=item: self.open_meeting_details(it)),
+                                edit_btn,
+                                delete_btn,
+                            ],
+                            spacing=2,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN, wrap=True,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+            ],
+            spacing=8,
+        )
 
         return ft.Container(
             border_radius=18,
             bgcolor=ft.colors.WHITE,
             border=ft.border.all(1, "#E2E8F0"),
             padding=16,
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Row([ft.Text(f"🕒 {item['start']} - {item['end']}", size=15, weight=ft.FontWeight.BOLD), type_badge], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                            ft.Text(f"📅 {item['date']} | 🏢 {item['complex']} ({item['area']} м²)", weight=ft.FontWeight.W_500, color="#334155"),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Text(f"Клиент: {item['client']} | Менеджер CRM: {crm_m}", size=13),
-                    ft.Row(
-                        controls=[
-                            ft.Container(content=ft.Row([ft.Icon(ft.icons.PERSON_ROUNDED, size=14, color="#0C66E4"), ft.Text(f"Проведет: {host_m}", size=12, weight=ft.FontWeight.BOLD, color="#0C66E4")], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER), bgcolor="#E9F2FF", padding=ft.padding.symmetric(horizontal=10, vertical=4), border_radius=10),
-                            ft.Container(content=ft.Row([ft.Icon(ft.icons.CREATE_ROUNDED, size=14, color="#64748B"), ft.Text(f"Записал(а): {created_b}", size=12, color="#475569")], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER), bgcolor="#F1F5F9", padding=ft.padding.symmetric(horizontal=10, vertical=4), border_radius=10),
-                        ],
-                        spacing=8,
-                    ),
-                    ft.Text(f"Крючки: {item['hooks']}", size=12, italic=True, color="#475569") if item.get("hooks") else ft.Container(),
-                    ft.Text(f"Комментарий: {item['comment']}", size=12, color="#64748B") if item.get("comment") else ft.Container(),
-                    ft.Row(
-                        controls=[
-                            crm_btn,
-                            ft.Row(controls=status_controls, spacing=8, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                            ft.Row(
-                                controls=[
-                                    ft.TextButton("Подробнее и звонок", icon=ft.icons.INFO_OUTLINE_ROUNDED, on_click=lambda e, it=item: self.open_meeting_details(it)),
-                                    edit_btn,
-                                    delete_btn,
-                                ],
-                                spacing=2,
-                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                            ),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN, wrap=True,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                ],
-                spacing=8,
-            ),
+            content=card_body,
         )
 
     def on_confirm_complete(self, e):
@@ -1103,13 +1155,28 @@ class MeetingsController:
             self.page.update()
 
     def on_confirm_delete(self, e):
+        if self._is_deleting:
+            return
+        self._is_deleting = True
+
         meeting = self.action_context.get("meeting")
-        if meeting and meeting.get("row_idx"):
-            delete_meeting(meeting["row_idx"])
+        prog_bar = self.action_context.get("card_progress")
+
+        self.btn_delete_confirm.disabled = True
+        self.btn_delete_confirm.text = "Удаление..."
+        if prog_bar:
+            prog_bar.visible = True
+        self.page.update()
+
+        try:
+            if meeting and meeting.get("row_idx"):
+                delete_meeting(meeting["row_idx"])
             self.delete_dialog.open = False
             self.load_schedule_list()
             self.load_registry_list()
             self.refresh_slots()
+        finally:
+            self._is_deleting = False
             self.page.update()
 
     def open_edit_dialog(self, item: dict):
