@@ -5,20 +5,18 @@
 #define MyAppExeName "REapps.exe"
 
 [Setup]
-AppId={{C8A7B9F1-2D3E-4B5C-8A9E-1F2D3C4B5A6F}
-AppName={#MyAppName}
-AppVersion={#MyAppVersion}
-AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
-DefaultGroupName={#MyAppName}
-DisableProgramGroupPage=yes
-OutputBaseFilename=Ассистент_RE_Setup_v{#MyAppVersion}
+AppId={{E8B42A68-3F4A-4D78-9B1D-6F9346BE1A80}
+AppName=Ассистент RE
+AppVersion=1.0.3
+AppPublisher=RE / DESIGN BURO
+DefaultDirName={autopf}\REdesign
+DefaultGroupName=REdesign
 OutputDir=dist_installer
-Compression=lzma2/ultra64
+OutputBaseFilename=REdesign_Setup_v1.0.3
+SetupIconFile=app_icon.ico
+Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=app_icon.ico
-UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
