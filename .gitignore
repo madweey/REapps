@@ -1,0 +1,28 @@
+# Секретные ключи и авторизация (НЕЛЬЗЯ В ГИТ!)
+google_key.json
+session.json
+*.env
+
+# Папки сборок и кэш
+build/
+dist/
+__pycache__/
+*.pyc
+*.spec
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+
+# Временные файлы системы
+.DS_Store
+Thumbs.db
+
+# Временные аудиозаписи и кэш транскрибации
+temp_audio/
+*.dat
+*.mp3
+*.wav
+*.ogg
+*.m4a
