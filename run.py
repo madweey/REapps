@@ -22,14 +22,37 @@ from apps.core.updater import check_for_updates, download_and_install_update, CU
 # ==========================================
 MUTEX_HANDLE = None
 
+def get_asset_path(filename: str) -> str:
+    """Ищет файл во временной папке PyInstaller, рядом с .exe или в корне проекта."""
+    # 1. PyInstaller распаковка
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        p = os.path.join(sys._MEIPASS, filename)
+        if os.path.exists(p):
+            return p
+
+    # 2. Рядом с исполняемым файлом или run.py
+    base_dir = os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
+    p = os.path.join(base_dir, filename)
+    if os.path.exists(p):
+        return p
+
+    # 3. Текущая рабочая директория
+    p = os.path.join(os.getcwd(), filename)
+    if os.path.exists(p):
+        return p
+
+    return filename
+
+
 def setup_windows_environment():
-    """Задает AppUserModelID для отображения корректной иконки в панели задач Windows."""
+    """Задает жесткий AppUserModelID для корректного отображения иконки в таскбаре Windows."""
     if sys.platform == "win32":
         try:
-            myappid = "redesignburo.reapps.assistant.1.0"
+            myappid = "redesignburo.reapps.client.1.0"
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass
+
 
 def ensure_single_instance() -> bool:
     """
@@ -61,34 +84,34 @@ def ensure_single_instance() -> bool:
         return True
 
 
-def build_brand_logo_widget(size: int = 84) -> ft.Control:
-    """Отрисовывает логотип RE DESIGN BURO (Вариант 1) строго через нативные компоненты."""
-    re_font_size = int(size * 0.40)
-    sub_font_size = max(8, int(size * 0.10))
-    radius = int(size * 0.22)
+def build_app_icon_control(size: int = 84) -> ft.Control:
+    """Отображает фирменный значок приложения из app_icon.ico."""
+    icon_path = get_asset_path("app_icon.ico")
+    if os.path.exists(icon_path):
+        return ft.Container(
+            content=ft.Image(
+                src=icon_path,
+                width=size,
+                height=size,
+                fit=ft.ImageFit.CONTAIN,
+            ),
+            width=size,
+            height=size,
+            border_radius=int(size * 0.22),
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        )
 
+    # Запасной нативный вариант, если файл иконки отсутствует
     return ft.Container(
         width=size,
         height=size,
         bgcolor="#16181B",
-        border_radius=radius,
+        border_radius=int(size * 0.22),
         alignment=ft.alignment.center,
         content=ft.Column(
             controls=[
-                ft.Text(
-                    "RE",
-                    size=re_font_size,
-                    weight=ft.FontWeight.W_900,
-                    color="#FFFFFF",
-                    text_align=ft.TextAlign.CENTER,
-                ),
-                ft.Text(
-                    "DESIGN BURO",
-                    size=sub_font_size,
-                    weight=ft.FontWeight.BOLD,
-                    color="#94A3B8",
-                    text_align=ft.TextAlign.CENTER,
-                ),
+                ft.Text("RE", size=int(size * 0.4), weight=ft.FontWeight.W_900, color="#FFFFFF"),
+                ft.Text("DESIGN BURO", size=max(8, int(size * 0.1)), weight=ft.FontWeight.BOLD, color="#94A3B8"),
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -121,9 +144,9 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0
 
-    icon_relative_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_icon.ico")
-    if os.path.exists(icon_relative_path):
-        page.window.icon = icon_relative_path
+    app_icon_file = get_asset_path("app_icon.ico")
+    if os.path.exists(app_icon_file):
+        page.window.icon = app_icon_file
 
     page.locale_configuration = ft.LocaleConfiguration(
         supported_locales=[ft.Locale("ru", "RU")],
@@ -281,7 +304,7 @@ def main(page: ft.Page):
             ft.Container(
                 content=ft.Column(
                     controls=[
-                        build_brand_logo_widget(size=88),
+                        build_app_icon_control(size=84),
                         ft.Container(height=12),
                         ft.Text("REapps", size=26, weight=ft.FontWeight.BOLD, color="#0D47A1"),
                         ft.Container(height=8),
@@ -344,7 +367,7 @@ def main(page: ft.Page):
                         padding=35,
                         content=ft.Column(
                             controls=[
-                                build_brand_logo_widget(size=72),
+                                build_app_icon_control(size=72),
                                 ft.Container(height=6),
                                 ft.Text("Вход в REapps", size=22, weight=ft.FontWeight.BOLD),
                                 ft.Text("Введите учетные данные для доступа", size=12, color="#757575"),
@@ -712,7 +735,7 @@ def main(page: ft.Page):
             controls=[
                 ft.Container(
                     content=ft.Row([
-                        build_brand_logo_widget(size=30),
+                        build_app_icon_control(size=28),
                         ft.Text("REapps", size=17, weight=ft.FontWeight.BOLD),
                         ft.Container(
                             bgcolor="#E3F2FD",
