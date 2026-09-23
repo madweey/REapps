@@ -134,7 +134,7 @@ class MeetingsController:
             visible=False,
         )
 
-        # 2. Параметры даты и участников (Шаг 2) — единые шрифты и стиль One UI
+        # 2. Параметры даты и участников (Шаг 2)
         self.date_input = ft.TextField(
             label="Дата встречи",
             hint_text="ДД.ММ.ГГГГ",
@@ -253,6 +253,7 @@ class MeetingsController:
         )
         self.save_status_text = ft.Text("", size=13, weight=ft.FontWeight.W_500)
 
+        # Кнопка бронирования
         self.btn_book_meeting = ft.ElevatedButton(
             "Забронировать встречу",
             icon=ft.icons.ADD_TASK_ROUNDED,
@@ -262,15 +263,6 @@ class MeetingsController:
             style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=14)),
             disabled=True,
             on_click=self.on_save_meeting,
-        )
-
-        self.btn_tg_form = ft.OutlinedButton(
-            "Форма для передачи",
-            icon=ft.icons.COPY_ALL_ROUNDED,
-            height=46,
-            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=14)),
-            disabled=True,
-            on_click=self.show_tg_form,
         )
 
         # 3. Расписание
@@ -358,13 +350,21 @@ class MeetingsController:
         self.registry_list = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO)
 
     def _build_modals(self):
-        self.tg_text_field = ft.TextField(multiline=True, min_lines=15, max_lines=19, read_only=True, border_radius=12, text_size=13)
-        self.tg_dialog = ft.AlertDialog(
-            title=ft.Row([ft.Icon(ft.icons.COPY_ALL_ROUNDED, color="#0C66E4"), ft.Text("Форма для передачи", size=16, weight=ft.FontWeight.BOLD)]),
-            content=ft.Container(content=self.tg_text_field, width=500),
+        # Всплывающее окно после успешного бронирования
+        self.booked_success_content = ft.Column(spacing=8, tight=True)
+        self.booked_success_dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(ft.icons.CHECK_CIRCLE_ROUNDED, color="#15803D", size=24),
+                ft.Text("Встреча забронирована!", size=16, weight=ft.FontWeight.BOLD),
+            ], spacing=8),
+            content=ft.Container(content=self.booked_success_content, width=480),
             actions=[
-                ft.TextButton("Закрыть", on_click=lambda e: setattr(self.tg_dialog, "open", False) or self.page.update()),
-                ft.ElevatedButton("Скопировать в буфер", icon=ft.icons.CONTENT_COPY_ROUNDED, bgcolor="#0C66E4", color=ft.colors.WHITE, on_click=self.copy_tg_form_to_clipboard),
+                ft.ElevatedButton(
+                    "Отлично",
+                    bgcolor="#0C66E4",
+                    color=ft.colors.WHITE,
+                    on_click=lambda e: setattr(self.booked_success_dialog, "open", False) or self.page.update(),
+                )
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
@@ -393,6 +393,12 @@ class MeetingsController:
             on_change=lambda e: setattr(self.reg_date_to_input, "value", self.reg_date_picker_to.value.strftime("%d.%m.%Y")) or self.page.update(),
             first_date=datetime(2025, 1, 1), last_date=datetime(2030, 12, 31),
             confirm_text="Выбрать", cancel_text="Отмена", help_text="По дату",
+        )
+
+        self.edit_date_picker = ft.DatePicker(
+            on_change=self.on_edit_date_picked,
+            first_date=datetime(2025, 1, 1), last_date=datetime(2030, 12, 31),
+            confirm_text="Выбрать", cancel_text="Отмена", help_text="Изменить дату встречи",
         )
 
         self.complete_feedback_input = ft.TextField(label="Результат встречи", multiline=True, min_lines=3, border_radius=12, text_size=13)
@@ -439,6 +445,30 @@ class MeetingsController:
         self.btn_delete_cancel.on_click = lambda e: setattr(self.delete_dialog, "open", False) or self.page.update()
         self.btn_delete_confirm.on_click = self.on_confirm_delete
 
+        # Поля модального окна редактирования (Скрин 1)
+        self.edit_date_input = ft.TextField(
+            label="Дата встречи",
+            hint_text="ДД.ММ.ГГГГ",
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
+            width=175,
+            border_radius=12,
+            suffix=ft.IconButton(
+                icon=ft.icons.CALENDAR_TODAY_OUTLINED,
+                icon_size=18,
+                tooltip="Выбрать дату",
+                on_click=lambda e: self.edit_date_picker.pick_date(),
+            ),
+        )
+        self.edit_time_input = ft.TextField(
+            label="Время встречи (напр. 13:00)",
+            hint_text="13:00",
+            text_size=13,
+            label_style=ft.TextStyle(size=12, color="#64748B"),
+            expand=True,
+            border_radius=12,
+        )
+
         self.edit_call_url_input = ft.TextField(
             label="Ссылка на звонок (mp3)",
             hint_text="https://vats.../record.mp3 или Яндекс.Диск",
@@ -450,6 +480,7 @@ class MeetingsController:
             options=[ft.dropdown.Option(name) for name in self.account_names],
             border_radius=12,
             text_size=13,
+            expand=True,
         )
         self.edit_type_dropdown = ft.Dropdown(
             label="Тип встречи",
@@ -459,6 +490,7 @@ class MeetingsController:
             ],
             border_radius=12,
             text_size=13,
+            expand=True,
         )
         self.edit_hooks_input = ft.TextField(label="Крючки", multiline=True, min_lines=2, max_lines=3, border_radius=12, text_size=13)
         self.edit_comment_input = ft.TextField(label="Комментарий", multiline=True, min_lines=2, max_lines=3, border_radius=12, text_size=13)
@@ -470,6 +502,7 @@ class MeetingsController:
                 content=ft.Column(
                     controls=[
                         self.edit_call_url_input,
+                        ft.Row([self.edit_date_input, self.edit_time_input], spacing=10),
                         ft.Row([self.edit_host_dropdown, self.edit_type_dropdown], spacing=10),
                         self.edit_hooks_input,
                         self.edit_comment_input,
@@ -558,13 +591,18 @@ class MeetingsController:
         )
 
         for d in (
-            self.tg_dialog, self.book_date_picker, self.sched_date_picker_from,
+            self.booked_success_dialog, self.book_date_picker, self.sched_date_picker_from,
             self.sched_date_picker_to, self.reg_date_picker_from, self.reg_date_picker_to,
-            self.complete_dialog, self.cancel_dialog, self.delete_dialog, self.detail_dialog,
-            self.meeting_ai_dialog, self.edit_dialog
+            self.edit_date_picker, self.complete_dialog, self.cancel_dialog, self.delete_dialog,
+            self.detail_dialog, self.meeting_ai_dialog, self.edit_dialog
         ):
             if d not in self.page.overlay:
                 self.page.overlay.append(d)
+
+    def on_edit_date_picked(self, e):
+        if self.edit_date_picker.value:
+            self.edit_date_input.value = self.edit_date_picker.value.strftime("%d.%m.%Y")
+            self.page.update()
 
     def cleanup_audio_player(self):
         if self.audio_state["player"]:
@@ -777,7 +815,6 @@ class MeetingsController:
         if self.deal_verified:
             self.deal_verified = False
             self.btn_book_meeting.disabled = True
-            self.btn_tg_form.disabled = True
             self.info_card.visible = False
             self.save_status_text.value = "Ссылка изменена. Нажмите «Найти сделку» для проверки."
             self.save_status_text.color = "#D97706"
@@ -802,7 +839,6 @@ class MeetingsController:
                 self.deal_cache.update(data)
                 self.deal_verified = True
                 self.btn_book_meeting.disabled = False
-                self.btn_tg_form.disabled = False
 
                 self.info_card_content.controls = [
                     ft.Text(f"Клиент: {data['client']} | ID: {data['deal_id']} | ЖК: {data['complex']}", weight=ft.FontWeight.BOLD, size=13),
@@ -819,7 +855,6 @@ class MeetingsController:
             else:
                 self.deal_verified = False
                 self.btn_book_meeting.disabled = True
-                self.btn_tg_form.disabled = True
                 self.info_card_content.controls = [ft.Text("Сделка не найдена в таблице", color="#DC2626", size=12)]
                 self.info_card.visible = True
                 self.save_status_text.value = "Сделка не найдена!"
@@ -827,7 +862,6 @@ class MeetingsController:
         except Exception as err:
             self.deal_verified = False
             self.btn_book_meeting.disabled = True
-            self.btn_tg_form.disabled = True
             self.info_card_content.controls = [ft.Text(f"Ошибка загрузки: {err}", color="#DC2626", size=12)]
             self.info_card.visible = True
             self.save_status_text.value = f"Ошибка: {err}"
@@ -836,19 +870,7 @@ class MeetingsController:
             self.deal_url_input.disabled = False
             self.page.update()
 
-    def show_tg_form(self, e):
-        if not self.deal_verified:
-            self.save_status_text.value = "Сначала подтвердите сделку (кнопка «Найти сделку»)!"
-            self.save_status_text.color = "#DC2626"
-            self.page.update()
-            return
-
-        if not self.selected_time["start"]:
-            self.save_status_text.value = "Сначала выберите время встречи!"
-            self.save_status_text.color = "#DC2626"
-            self.page.update()
-            return
-
+    def build_transfer_text(self) -> str:
         rooms_val = self.deal_cache.get("rooms", "").strip()
         rooms_str = f"{rooms_val} ком" if rooms_val else ""
         id_complex_str = f"{self.deal_cache.get('deal_id', '')} {self.deal_cache.get('complex', '')}".strip()
@@ -857,7 +879,7 @@ class MeetingsController:
         area_rooms_str = f"{area_str} {rooms_str}".strip()
         crm_url = normalize_deal_url(self.deal_cache.get("deal_url") or self.deal_url_input.value.strip())
 
-        template = (
+        return (
             f"{self.deal_cache.get('client', '')}\n"
             f"{id_complex_str}\n"
             f"{area_rooms_str}\n"
@@ -875,16 +897,6 @@ class MeetingsController:
             f"Комментарии КЦ: {self.deal_cache.get('comment', '')}\n"
             f"Ссылка CRM: {crm_url}"
         )
-        self.tg_text_field.value = template
-        self.tg_dialog.open = True
-        self.page.update()
-
-    def copy_tg_form_to_clipboard(self, e):
-        self.page.set_clipboard(self.tg_text_field.value)
-        self.save_status_text.value = "Текст скопирован в буфер обмена!"
-        self.save_status_text.color = "#2E7D32"
-        self.tg_dialog.open = False
-        self.page.update()
 
     def clear_form(self, e=None):
         self.deal_url_input.value = ""
@@ -894,7 +906,6 @@ class MeetingsController:
         self.save_status_text.value = ""
         self.deal_verified = False
         self.btn_book_meeting.disabled = True
-        self.btn_tg_form.disabled = True
 
         for k in self.deal_cache:
             self.deal_cache[k] = ""
@@ -944,6 +955,21 @@ class MeetingsController:
 
         try:
             save_new_meeting(payload)
+            transfer_text = self.build_transfer_text()
+            self.page.set_clipboard(transfer_text)
+
+            self.booked_success_content.controls = [
+                ft.Text("Форма для передачи скопирована в буфер обмена!", size=13, weight=ft.FontWeight.W_600, color="#15803D"),
+                ft.Container(
+                    content=ft.Text(transfer_text, size=11, color="#334155", selectable=True),
+                    bgcolor="#F8FAFC",
+                    padding=12,
+                    border_radius=10,
+                    border=ft.border.all(1, "#E2E8F0"),
+                ),
+            ]
+            self.booked_success_dialog.open = True
+
             self.save_status_text.value = f"Встреча на {payload['date']} в {payload['start']} успешно записана!"
             self.save_status_text.color = "#2E7D32"
             self.selected_time = {"start": "", "end": "", "reason": ""}
@@ -1181,6 +1207,8 @@ class MeetingsController:
 
     def open_edit_dialog(self, item: dict):
         self.action_context["editing_meeting"] = item
+        self.edit_date_input.value = item.get("date", "")
+        self.edit_time_input.value = item.get("start", "")
         self.edit_call_url_input.value = item.get("call_url", "")
         self.edit_host_dropdown.value = item.get("host_manager") or (self.account_names[0] if self.account_names else "")
         self.edit_type_dropdown.value = item.get("meeting_type") or "Онлайн встреча"
@@ -1197,7 +1225,14 @@ class MeetingsController:
             return
 
         row_idx = item["row_idx"]
+        new_date = self.edit_date_input.value.strip()
+        new_start = self.edit_time_input.value.strip()
+        new_end = calculate_end_time(new_start) if new_start else item.get("end", "")
+
         updated_data = {
+            "date": new_date,
+            "start": new_start,
+            "end": new_end,
             "call_url": self.edit_call_url_input.value.strip(),
             "host_manager": self.edit_host_dropdown.value or "",
             "meeting_type": self.edit_type_dropdown.value or "Онлайн встреча",
@@ -1216,6 +1251,7 @@ class MeetingsController:
             self.edit_dialog.open = False
             self.load_schedule_list()
             self.load_registry_list()
+            self.refresh_slots()
 
             if self.detail_dialog.open:
                 self.open_meeting_details(item)
@@ -1661,7 +1697,6 @@ class MeetingsController:
                         ft.Row(
                             controls=[
                                 self.btn_book_meeting,
-                                self.btn_tg_form,
                             ],
                             spacing=12,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,

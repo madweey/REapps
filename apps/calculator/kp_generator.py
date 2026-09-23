@@ -1,22 +1,26 @@
 import json
 import re
+import time
 import datetime
 import requests
 from apps.core.sheets import get_sheets_client
 
-SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxQZ6pYW9JRUKsFJv70MUEyKOHcJ2iiQEhVI6NKOqaMM-zubsxZIyDYv3oXX6RrSlFP/exec"
+SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxemri-udzk9vRDOgFkk8eI3lnpn3GecmENACRx4T4Us1EX0BDI7Er7EVUqdmGSnTK4XQ/exec"
 TARGET_FOLDER_ID = "1SJvStDf7UyTKfrNnLYrutRRQv4n_ODn8"
 
 
 def extract_file_id_from_url(url: str) -> str | None:
-    match = re.search(r"/d/([a-zA-Z0-9_-]+)", str(url))
+    """Извлекает чистый ID документа, отсекая параметры ?slide=... и #slide=..."""
+    if not url:
+        return None
+    match = re.search(r"/d/([a-zA-Z0-9_-]+)", str(url).strip())
     if match:
-        return match.group(1)
+        return match.group(1).split("?")[0].split("#")[0].split("/")[0]
     return None
 
 
 def get_kp_template_id_from_links() -> str:
-    fallback_id = "1dEj43-yatgANpNoyLgMry1DZ1PgO41cRjdxt2P1jtEk"
+    fallback_id = "1PWSYfJ8sce7pLFmK9oiv1u62uuF8uIXMye_O5MfJ5dU"
     try:
         sh = get_sheets_client()
         ws = sh.worksheet("Ссылки")
@@ -111,18 +115,26 @@ def generate_kp_presentation(calc_data: dict, client_name: str, address: str, pr
     }
 
     session = requests.Session()
-    session.trust_env = False  # Игнорировать системные переменные прокси, чтобы исключить помехи со стороны Windows
 
-    try:
-        resp = session.post(
-            SCRIPT_URL,
-            data=json.dumps(payload),
-            headers=headers,
-            timeout=120,
-            allow_redirects=True,
-        )
-    except Exception as ex:
-        raise RuntimeError(f"Ошибка соединения с Google Apps Script: {ex}")
+    resp = None
+    last_err = None
+    for attempt in range(2):
+        try:
+            resp = session.post(
+                SCRIPT_URL,
+                data=json.dumps(payload),
+                headers=headers,
+                timeout=120,
+                allow_redirects=True,
+            )
+            if resp.status_code == 200:
+                break
+        except Exception as ex:
+            last_err = ex
+            time.sleep(2)
+
+    if resp is None:
+        raise RuntimeError(f"Ошибка соединения с Google Apps Script: {last_err}")
 
     if resp.status_code != 200:
         raise RuntimeError(f"Apps Script вернул ошибку {resp.status_code}: {resp.text[:300]}")
