@@ -15,7 +15,7 @@ from apps.transcription.prompts_view import PromptsView
 from apps.calculator.dp_view import DPView
 from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
-from apps.core.updater import check_for_updates, download_and_install_update, CURRENT_VERSION
+from apps.core.updater import check_for_updates, download_update_file, apply_update_and_restart, CURRENT_VERSION
 
 MUTEX_HANDLE = None
 
@@ -179,7 +179,7 @@ def main(page: ft.Page):
         status_lbl = ft.Text("", size=11, color="#616161")
         has_exe = bool(update_info.get("download_url"))
 
-        btn_update = ft.ElevatedButton(
+        btn_action = ft.ElevatedButton(
             "Обновить сейчас" if has_exe else "Перейти к релизу",
             bgcolor="#0C66E4",
             color="#FFFFFF",
@@ -191,6 +191,12 @@ def main(page: ft.Page):
             dlg.open = False
             page.update()
 
+        def do_restart(e):
+            btn_action.disabled = True
+            status_lbl.value = "Перезапуск приложения..."
+            page.update()
+            apply_update_and_restart()
+
         def do_update(e):
             download_url = update_info.get("download_url")
             if not download_url:
@@ -198,10 +204,10 @@ def main(page: ft.Page):
                 close_dlg()
                 return
 
-            btn_update.disabled = True
+            btn_action.disabled = True
             btn_cancel.disabled = True
             prog_bar.visible = True
-            status_lbl.value = "Скачивание обновления..."
+            status_lbl.value = "Подключение к серверу..."
             status_lbl.color = "#0C66E4"
             page.update()
 
@@ -210,30 +216,34 @@ def main(page: ft.Page):
                 status_lbl.value = f"Загрузка: {int(pct * 100)}%"
                 page.update()
 
+            def on_success():
+                prog_bar.visible = False
+                status_lbl.value = "Обновление готово к установке!"
+                status_lbl.color = "#2E7D32"
+                btn_action.text = "Перезагрузить приложение"
+                btn_action.icon = ft.icons.REPLAY_ROUNDED
+                btn_action.bgcolor = "#2E7D32"
+                btn_action.disabled = False
+                btn_action.on_click = do_restart
+                btn_cancel.disabled = False
+                page.update()
+
             def on_err(err_msg: str):
-                btn_update.disabled = False
+                btn_action.disabled = False
                 btn_cancel.disabled = False
                 prog_bar.visible = False
-                status_lbl.value = f"Ошибка: {err_msg}"
+                status_lbl.value = f"Ошибка скачивания: {err_msg}"
                 status_lbl.color = "#D32F2F"
                 page.update()
 
-            def run_update_thread():
-                # Закрываем GUI-окно Flet перед заменой процесса
-                try:
-                    page.window.close()
-                except Exception:
-                    pass
+            download_update_file(
+                download_url=download_url,
+                on_progress=on_progress,
+                on_success=on_success,
+                on_error=on_err,
+            )
 
-                download_and_install_update(
-                    download_url=download_url,
-                    on_progress=on_progress,
-                    on_error=on_err,
-                )
-
-            threading.Thread(target=run_update_thread, daemon=True).start()
-
-        btn_update.on_click = do_update
+        btn_action.on_click = do_update
         btn_cancel.on_click = close_dlg
 
         body_notes = update_info.get("body", "").strip() or "Улучшения стабильности и новые функции."
@@ -265,7 +275,7 @@ def main(page: ft.Page):
                     tight=True,
                 ),
             ),
-            actions=[btn_cancel, btn_update],
+            actions=[btn_cancel, btn_action],
         )
 
         if dlg not in page.overlay:

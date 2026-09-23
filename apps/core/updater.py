@@ -5,7 +5,7 @@ import subprocess
 import threading
 import requests
 
-CURRENT_VERSION = "1.1.2"
+CURRENT_VERSION = "1.1.1"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
@@ -72,24 +72,26 @@ def check_for_updates() -> dict | None:
     return None
 
 
-def download_and_install_update(download_url: str, on_progress=None, on_error=None):
+def download_update_file(download_url: str, on_progress=None, on_success=None, on_error=None):
     """
-    Скачивает новый бинарник с User-Agent и запускает надежный процесс
-    самообновления через PowerShell с полным логированием.
+    Только скачивает файл обновления в Temp без закрытия приложения.
     """
     def _worker():
         try:
             if not getattr(sys, "frozen", False):
                 if on_error:
-                    on_error("Автообновление работает только в скомпилированной версии (.exe).")
+                    on_error("Автообновление доступно только в собранной версии (.exe).")
                 return
 
-            current_exe = os.path.abspath(sys.executable)
             temp_dir = tempfile.gettempdir()
             new_exe = os.path.join(temp_dir, "REapps_new.exe")
-            log_file = os.path.join(temp_dir, "reapps_update.log")
 
-            # Скачивание файла с браузерным заголовком во избежание блокировки 403
+            if os.path.exists(new_exe):
+                try:
+                    os.remove(new_exe)
+                except Exception:
+                    pass
+
             resp = requests.get(download_url, headers=HEADERS, stream=True, timeout=120)
             resp.raise_for_status()
             total_len = int(resp.headers.get("content-length", 0))
@@ -103,10 +105,29 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
                         if total_len > 0 and on_progress:
                             on_progress(downloaded / total_len)
 
-            pid = os.getpid()
-            ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
+            if on_success:
+                on_success()
 
-            ps_content = f"""
+        except Exception as e:
+            if on_error:
+                on_error(str(e))
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def apply_update_and_restart():
+    """
+    Запускает скрипт PowerShell для подмены файла и перезапускает новую версию.
+    """
+    try:
+        current_exe = os.path.abspath(sys.executable)
+        temp_dir = tempfile.gettempdir()
+        new_exe = os.path.join(temp_dir, "REapps_new.exe")
+        log_file = os.path.join(temp_dir, "reapps_update.log")
+        ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
+        pid = os.getpid()
+
+        ps_content = f"""
 $ErrorActionPreference = "Continue"
 $log = "{log_file}"
 
@@ -124,7 +145,7 @@ while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt
     $attempts++
 }}
 
-Log "Завершение фоновых процессов Flet и приложения..."
+Log "Завершение фоновых процессов..."
 taskkill /F /PID {pid} /T 2>$null
 taskkill /F /IM REapps.exe /T 2>$null
 taskkill /F /IM flet.exe /T 2>$null
@@ -156,20 +177,17 @@ if ($copySuccess) {{
 Start-Sleep -Seconds 1
 Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 """
-            with open(ps_script, "w", encoding="utf-8-sig") as f:
-                f.write(ps_content)
+        with open(ps_script, "w", encoding="utf-8-sig") as f:
+            f.write(ps_content)
 
-            cmd = f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps_script}"'
-            subprocess.Popen(
-                cmd,
-                shell=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            )
+        cmd = f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps_script}"'
+        subprocess.Popen(
+            cmd,
+            shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        )
 
-            os._exit(0)
-
-        except Exception as e:
-            if on_error:
-                on_error(str(e))
-
-    threading.Thread(target=_worker, daemon=True).start()
+        os._exit(0)
+    except Exception as e:
+        print(f"[Updater DEBUG] Критический сбой при перезапуске: {e}")
+        os._exit(1)
