@@ -9,6 +9,11 @@ CURRENT_VERSION = "1.1.1"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/octet-stream",
+}
+
 
 def parse_version(ver_str: str) -> tuple:
     """Очищает строку версии (v1.0.8 -> (1, 0, 8))."""
@@ -28,10 +33,7 @@ def check_for_updates() -> dict | None:
     Не использует REST API, благодаря чему не подвержен ограничениям rate limit (ошибка 403).
     """
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        }
-        resp = requests.get(RELEASE_URL, headers=headers, allow_redirects=False, timeout=5)
+        resp = requests.get(RELEASE_URL, headers=HEADERS, allow_redirects=False, timeout=10)
         print(f"[Updater DEBUG] URL: {RELEASE_URL}")
         print(f"[Updater DEBUG] Status code: {resp.status_code}")
 
@@ -72,8 +74,8 @@ def check_for_updates() -> dict | None:
 
 def download_and_install_update(download_url: str, on_progress=None, on_error=None):
     """
-    Скачивает новый бинарник и запускает процесс самообновления
-    через прямой надежный PowerShell-процесс с логированием.
+    Скачивает новый бинарник с User-Agent и запускает надежный процесс
+    самообновления через PowerShell с полным логированием.
     """
     def _worker():
         try:
@@ -87,7 +89,8 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
             new_exe = os.path.join(temp_dir, "REapps_new.exe")
             log_file = os.path.join(temp_dir, "reapps_update.log")
 
-            resp = requests.get(download_url, stream=True, timeout=60)
+            # Скачивание файла с браузерным заголовком во избежание блокировки 403
+            resp = requests.get(download_url, headers=HEADERS, stream=True, timeout=120)
             resp.raise_for_status()
             total_len = int(resp.headers.get("content-length", 0))
 
@@ -116,38 +119,38 @@ Log "Начало процесса обновления. PID приложени�
 
 # Ожидание выхода основного процесса
 $attempts = 0
-while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt 20)) {{
+while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt 25)) {{
     Start-Sleep -Milliseconds 300
     $attempts++
 }}
 
-Log "Попытка остановки зависших процессов..."
+Log "Завершение фоновых процессов Flet и приложения..."
 taskkill /F /PID {pid} /T 2>$null
 taskkill /F /IM REapps.exe /T 2>$null
 taskkill /F /IM flet.exe /T 2>$null
-Start-Sleep -Milliseconds 800
+Start-Sleep -Milliseconds 1000
 
 Log "Копирование нового файла: '{new_exe}' -> '{current_exe}'"
 $copySuccess = $false
-for ($i = 0; $i -lt 20; $i++) {{
+for ($i = 0; $i -lt 25; $i++) {{
     try {{
         Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force -ErrorAction Stop
         $copySuccess = $true
-        Log "Файл успешно скопирован на попытке $i"
+        Log "Файл успешно заменен на попытке $i"
         break
     }} catch {{
-        Log "Ошибка копирования (попытка $i): $_"
+        Log "Попытка $i не удалась (файл занят): $_"
         Start-Sleep -Milliseconds 500
     }}
 }}
 
 if ($copySuccess) {{
-    Log "Удаление временного файла и запуск обновленного приложения..."
+    Log "Удаление временного файла и запуск обновленной версии..."
     Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
     Start-Process -FilePath '{current_exe}'
     Log "Обновление завершено успешно!"
 }} else {{
-    Log "КРИТИЧЕСКАЯ ОШИБКА: Не удалось заменить файл приложения!"
+    Log "ОШИБКА: Не удалось перезаписать файл приложения."
 }}
 
 Start-Sleep -Seconds 1
@@ -156,7 +159,6 @@ Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyConti
             with open(ps_script, "w", encoding="utf-8-sig") as f:
                 f.write(ps_content)
 
-            # Запускаем PowerShell напрямую без капризного VBS и скрытно
             cmd = f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps_script}"'
             subprocess.Popen(
                 cmd,
