@@ -5,7 +5,7 @@ import subprocess
 import threading
 import requests
 
-CURRENT_VERSION = "1.1.0"
+CURRENT_VERSION = "1.1.1"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
@@ -73,7 +73,7 @@ def check_for_updates() -> dict | None:
 def download_and_install_update(download_url: str, on_progress=None, on_error=None):
     """
     Скачивает новый бинарник и запускает процесс самообновления
-    с принудительным завершением старых процессов приложения.
+    через прямой надежный PowerShell-процесс с логированием.
     """
     def _worker():
         try:
@@ -85,6 +85,7 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
             current_exe = os.path.abspath(sys.executable)
             temp_dir = tempfile.gettempdir()
             new_exe = os.path.join(temp_dir, "REapps_new.exe")
+            log_file = os.path.join(temp_dir, "reapps_update.log")
 
             resp = requests.get(download_url, stream=True, timeout=60)
             resp.raise_for_status()
@@ -103,50 +104,66 @@ def download_and_install_update(download_url: str, on_progress=None, on_error=No
             ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
 
             ps_content = f"""
-$pid_to_wait = {pid}
-$attempts = 0
+$ErrorActionPreference = "Continue"
+$log = "{log_file}"
+
+function Log($msg) {{
+    $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    "[$time] $msg" | Out-File -FilePath $log -Append -Encoding utf8
+}}
+
+Log "Начало процесса обновления. PID приложения: {pid}"
 
 # Ожидание выхода основного процесса
-while ((Get-Process -Id $pid_to_wait -ErrorAction SilentlyContinue) -and ($attempts -lt 15)) {{
+$attempts = 0
+while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt 20)) {{
     Start-Sleep -Milliseconds 300
     $attempts++
 }}
 
-# Принудительное уничтожение процессов REapps и движка Flet
-taskkill /F /PID $pid_to_wait /T 2>$null
+Log "Попытка остановки зависших процессов..."
+taskkill /F /PID {pid} /T 2>$null
 taskkill /F /IM REapps.exe /T 2>$null
 taskkill /F /IM flet.exe /T 2>$null
-Start-Sleep -Milliseconds 600
+Start-Sleep -Milliseconds 800
 
+Log "Копирование нового файла: '{new_exe}' -> '{current_exe}'"
 $copySuccess = $false
-for ($i = 0; $i -lt 15; $i++) {{
+for ($i = 0; $i -lt 20; $i++) {{
     try {{
         Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force -ErrorAction Stop
         $copySuccess = $true
+        Log "Файл успешно скопирован на попытке $i"
         break
     }} catch {{
-        Start-Sleep -Milliseconds 600
+        Log "Ошибка копирования (попытка $i): $_"
+        Start-Sleep -Milliseconds 500
     }}
 }}
 
 if ($copySuccess) {{
+    Log "Удаление временного файла и запуск обновленного приложения..."
     Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
     Start-Process -FilePath '{current_exe}'
+    Log "Обновление завершено успешно!"
+}} else {{
+    Log "КРИТИЧЕСКАЯ ОШИБКА: Не удалось заменить файл приложения!"
 }}
 
+Start-Sleep -Seconds 1
 Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 """
             with open(ps_script, "w", encoding="utf-8-sig") as f:
                 f.write(ps_content)
 
-            vbs_launcher = os.path.join(temp_dir, "reapps_elevate.vbs")
-            vbs_content = f'''Set UAC = CreateObject("Shell.Application")
-UAC.ShellExecute "powershell.exe", "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{ps_script}""", "", "runas", 0
-'''
-            with open(vbs_launcher, "w", encoding="ansi") as f:
-                f.write(vbs_content)
+            # Запускаем PowerShell напрямую без капризного VBS и скрытно
+            cmd = f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps_script}"'
+            subprocess.Popen(
+                cmd,
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            )
 
-            subprocess.Popen(["wscript.exe", vbs_launcher], shell=True)
             os._exit(0)
 
         except Exception as e:
