@@ -97,6 +97,16 @@ def update_meeting_details(row_idx: int, details: dict) -> bool:
     """Обновляет данные встречи при её редактировании."""
     sh = get_main_spreadsheet()
     ws = sh.worksheet("Встречи")
+
+    # Дата и время проведения встречи
+    if "date" in details:
+        ws.update_cell(row_idx, 1, details["date"])
+    if "start" in details:
+        ws.update_cell(row_idx, 2, details["start"])
+    if "end" in details:
+        ws.update_cell(row_idx, 3, details["end"])
+
+    # Ссылки, комментарии и параметры участников
     if "call_url" in details:
         ws.update_cell(row_idx, 10, details["call_url"])
     if "comment" in details:
@@ -107,6 +117,7 @@ def update_meeting_details(row_idx: int, details: dict) -> bool:
         ws.update_cell(row_idx, 17, details["meeting_type"])
     if "host_manager" in details:
         ws.update_cell(row_idx, 19, details["host_manager"])
+
     return True
 
 

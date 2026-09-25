@@ -1,17 +1,22 @@
 import flet as ft
-from apps.core.sheets import get_all_prompts, add_prompt, delete_prompt
+from apps.core.sheets import get_all_prompts, add_prompt, delete_prompt, update_prompt
 
 
 def PromptsView(page: ft.Page):
     status_text = ft.Text("", size=13, weight=ft.FontWeight.W_500)
-    cards_column = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+    cards_column = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
 
     cat_filter = ft.Dropdown(
         label="Фильтр по категории",
         value="Все категории",
-        width=200,
-        height=45,
-        dense=True,
+        width=210,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
         options=[
             ft.dropdown.Option("Все категории"),
             ft.dropdown.Option("Встречи"),
@@ -22,11 +27,19 @@ def PromptsView(page: ft.Page):
         ],
     )
 
-    # Модальное окно создания промта
+    # ==========================================
+    # МОДАЛЬНОЕ ОКНО СОЗДАНИЯ ПРОМТА
+    # ==========================================
     new_cat_dropdown = ft.Dropdown(
         label="Категория",
         value="Встречи",
-        dense=True,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
         options=[
             ft.dropdown.Option("Встречи"),
             ft.dropdown.Option("Звонки КЦ"),
@@ -38,7 +51,13 @@ def PromptsView(page: ft.Page):
     new_title_input = ft.TextField(
         label="Название промта",
         hint_text="Например: Анализ скрытых возражений",
-        dense=True,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
     )
     new_prompt_input = ft.TextField(
         label="Инструкция для ИИ (Текст промта)",
@@ -46,9 +65,14 @@ def PromptsView(page: ft.Page):
         multiline=True,
         min_lines=6,
         max_lines=12,
-        dense=True,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
     )
-    modal_error = ft.Text("", size=12, color=ft.colors.RED_600)
+    modal_error = ft.Text("", size=12, color="#EF4444")
 
     def on_confirm_add(e):
         title = new_title_input.value.strip()
@@ -62,20 +86,23 @@ def PromptsView(page: ft.Page):
 
         try:
             status_text.value = "Сохранение промта в Google Таблицу..."
-            status_text.color = ft.colors.BLUE_700
+            status_text.color = "#0C66E4"
             page.update()
 
             add_prompt(title, cat, p_text)
             add_dialog.open = False
             status_text.value = f"Промт '{title}' успешно добавлен!"
-            status_text.color = ft.colors.GREEN_700
+            status_text.color = "#15803D"
             load_prompts()
         except Exception as err:
             modal_error.value = f"Ошибка добавления: {err}"
             page.update()
 
     add_dialog = ft.AlertDialog(
-        title=ft.Text("Создать новый шаблон промта"),
+        title=ft.Row([
+            ft.Icon(ft.icons.POST_ADD_ROUNDED, color="#0C66E4", size=22),
+            ft.Text("Создать новый шаблон промта", size=16, weight=ft.FontWeight.BOLD),
+        ], spacing=8),
         content=ft.Container(
             content=ft.Column(
                 controls=[new_title_input, new_cat_dropdown, new_prompt_input, modal_error],
@@ -86,7 +113,7 @@ def PromptsView(page: ft.Page):
         ),
         actions=[
             ft.TextButton("Отмена", on_click=lambda e: setattr(add_dialog, "open", False) or page.update()),
-            ft.ElevatedButton("Сохранить в таблицу", bgcolor=ft.colors.BLUE_700, color=ft.colors.WHITE, on_click=on_confirm_add),
+            ft.ElevatedButton("Сохранить в таблицу", bgcolor="#0C66E4", color=ft.colors.WHITE, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)), on_click=on_confirm_add),
         ],
         actions_alignment=ft.MainAxisAlignment.END,
     )
@@ -100,6 +127,110 @@ def PromptsView(page: ft.Page):
         add_dialog.open = True
         page.update()
 
+    # ==========================================
+    # МОДАЛЬНОЕ ОКНО РЕДАКТИРОВАНИЯ ПРОМТА (КАРАНДАШ)
+    # ==========================================
+    edit_row_idx = {"val": None}
+    edit_title_input = ft.TextField(
+        label="Название промта",
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
+    )
+    edit_cat_dropdown = ft.Dropdown(
+        label="Категория",
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
+        options=[
+            ft.dropdown.Option("Встречи"),
+            ft.dropdown.Option("Звонки КЦ"),
+            ft.dropdown.Option("Продажи"),
+            ft.dropdown.Option("Анализ пачки"),
+            ft.dropdown.Option("Другое"),
+        ],
+    )
+    edit_prompt_input = ft.TextField(
+        label="Инструкция для ИИ (Текст промта)",
+        multiline=True,
+        min_lines=6,
+        max_lines=12,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F1F5F9",
+        border=ft.InputBorder.NONE,
+        border_radius=12,
+    )
+    edit_modal_error = ft.Text("", size=12, color="#EF4444")
+
+    def on_confirm_edit(e):
+        title = edit_title_input.value.strip()
+        cat = edit_cat_dropdown.value or "Встречи"
+        p_text = edit_prompt_input.value.strip()
+        r_idx = edit_row_idx["val"]
+
+        if not title or not p_text:
+            edit_modal_error.value = "Заполните название и текст инструкции!"
+            page.update()
+            return
+
+        try:
+            status_text.value = f"Обновление строки {r_idx} в Google Таблице..."
+            status_text.color = "#0C66E4"
+            page.update()
+
+            update_prompt(r_idx, title, cat, p_text)
+            edit_dialog.open = False
+            status_text.value = f"Промт '{title}' успешно обновлён!"
+            status_text.color = "#15803D"
+            load_prompts()
+        except Exception as err:
+            edit_modal_error.value = f"Ошибка изменения: {err}"
+            page.update()
+
+    edit_dialog = ft.AlertDialog(
+        title=ft.Row([
+            ft.Icon(ft.icons.EDIT_NOTE_ROUNDED, color="#0C66E4", size=22),
+            ft.Text("Редактировать промт", size=16, weight=ft.FontWeight.BOLD),
+        ], spacing=8),
+        content=ft.Container(
+            content=ft.Column(
+                controls=[edit_title_input, edit_cat_dropdown, edit_prompt_input, edit_modal_error],
+                spacing=12,
+                tight=True,
+            ),
+            width=540,
+        ),
+        actions=[
+            ft.TextButton("Отмена", on_click=lambda e: setattr(edit_dialog, "open", False) or page.update()),
+            ft.ElevatedButton("Сохранить изменения", bgcolor="#0C66E4", color=ft.colors.WHITE, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)), on_click=on_confirm_edit),
+        ],
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    if edit_dialog not in page.overlay:
+        page.overlay.append(edit_dialog)
+
+    def open_edit_modal(item: dict):
+        edit_row_idx["val"] = item["row_idx"]
+        edit_title_input.value = item.get("title", "")
+        edit_cat_dropdown.value = item.get("category", "Встречи")
+        edit_prompt_input.value = item.get("prompt_text", "")
+        edit_modal_error.value = ""
+        edit_dialog.open = True
+        page.update()
+
+    # ==========================================
+    # КАРТОЧКА ПРОМТА В ONE UI СТИЛЕ
+    # ==========================================
     def render_prompt_card(item: dict) -> ft.Control:
         idx = item["row_idx"]
 
@@ -107,73 +238,86 @@ def PromptsView(page: ft.Page):
             try:
                 delete_prompt(r_idx)
                 status_text.value = f"Промт '{t}' удалён!"
-                status_text.color = ft.colors.GREEN_700
+                status_text.color = "#15803D"
                 load_prompts()
             except Exception as err:
                 status_text.value = f"Ошибка удаления: {err}"
-                status_text.color = ft.colors.RED_700
+                status_text.color = "#DC2626"
                 page.update()
 
         cat = item.get("category", "Встречи")
-        return ft.Card(
-            elevation=1,
-            content=ft.Container(
-                padding=14,
-                border_radius=8,
-                bgcolor=ft.colors.WHITE,
-                content=ft.Column(
-                    controls=[
-                        ft.Row(
-                            controls=[
-                                ft.Row(
-                                    controls=[
-                                        ft.Container(
-                                            content=ft.Text(cat, size=11, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_900),
-                                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                                            bgcolor=ft.colors.BLUE_50,
-                                            border=ft.border.all(1, ft.colors.BLUE_200),
-                                            border_radius=6,
-                                        ),
-                                        ft.Text(item.get("title", ""), size=15, weight=ft.FontWeight.BOLD),
-                                    ],
-                                    spacing=8,
-                                ),
-                                ft.Text(f"📅 {item.get('created_at', '')}", size=12, color=ft.colors.GREY_600),
-                            ],
-                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                        ),
-                        ft.Container(
-                            content=ft.Text(item.get("prompt_text", ""), size=13, color=ft.colors.BLACK87),
-                            padding=10,
-                            bgcolor=ft.colors.SURFACE_VARIANT,
-                            border_radius=6,
-                        ),
-                        ft.Row(
-                            controls=[
-                                ft.OutlinedButton(
-                                    "Скопировать текст",
-                                    icon=ft.icons.COPY,
-                                    on_click=lambda e, t=item.get("prompt_text", ""): page.set_clipboard(t) or setattr(status_text, "value", "Текст скопирован!") or page.update(),
+        return ft.Container(
+            bgcolor="#FFFFFF",
+            border=ft.border.all(1, "#E2E8F0"),
+            border_radius=18,
+            padding=16,
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Row(
+                                controls=[
+                                    ft.Container(
+                                        content=ft.Text(cat, size=11, weight=ft.FontWeight.BOLD, color="#0C66E4"),
+                                        padding=ft.padding.symmetric(horizontal=10, vertical=4),
+                                        bgcolor="#EBF3FC",
+                                        border_radius=8,
+                                    ),
+                                    ft.Text(item.get("title", ""), size=15, weight=ft.FontWeight.BOLD, color="#1E293B"),
+                                ],
+                                spacing=8,
+                            ),
+                            ft.Text(f"📅 {item.get('created_at', '')}", size=11, color="#64748B"),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Container(
+                        content=ft.Text(item.get("prompt_text", ""), size=13, color="#334155"),
+                        padding=12,
+                        bgcolor="#F8FAFC",
+                        border=ft.border.all(1, "#F1F5F9"),
+                        border_radius=12,
+                    ),
+                    ft.Row(
+                        controls=[
+                            ft.ElevatedButton(
+                                "Скопировать текст",
+                                icon=ft.icons.COPY_ALL_ROUNDED,
+                                height=38,
+                                bgcolor="#F1F5F9",
+                                color="#1E293B",
+                                elevation=0,
+                                style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+                                on_click=lambda e, t=item.get("prompt_text", ""): page.set_clipboard(t) or page.show_snack_bar(ft.SnackBar(ft.Text("Текст промта скопирован!"), duration=1500)),
+                            ),
+                            ft.Row([
+                                ft.IconButton(
+                                    icon=ft.icons.EDIT_OUTLINED,
+                                    tooltip="Редактировать промт",
+                                    icon_color="#0C66E4",
+                                    icon_size=20,
+                                    on_click=lambda e, it=item: open_edit_modal(it),
                                 ),
                                 ft.IconButton(
-                                    icon=ft.icons.DELETE_OUTLINE,
+                                    icon=ft.icons.DELETE_OUTLINE_ROUNDED,
                                     tooltip="Удалить промт",
-                                    icon_color=ft.colors.RED_400,
+                                    icon_color="#EF4444",
+                                    icon_size=20,
                                     on_click=handle_delete,
                                 ),
-                            ],
-                            spacing=8,
-                        ),
-                    ],
-                    spacing=8,
-                ),
+                            ], spacing=2)
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                ],
+                spacing=10,
             ),
         )
 
     def load_prompts(e=None):
         cards_column.controls.clear()
         status_text.value = "Загрузка промтов..."
-        status_text.color = ft.colors.BLUE_700
+        status_text.color = "#0C66E4"
         page.update()
 
         try:
@@ -192,8 +336,8 @@ def PromptsView(page: ft.Page):
                         padding=40,
                         content=ft.Column(
                             controls=[
-                                ft.Icon(ft.icons.PSYCHOLOGY_ALT, size=48, color=ft.colors.GREY_400),
-                                ft.Text("Промты пока не добавлены", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.GREY_700),
+                                ft.Icon(ft.icons.PSYCHOLOGY_ALT_ROUNDED, size=48, color="#94A3B8"),
+                                ft.Text("Промты пока не добавлены", size=15, weight=ft.FontWeight.BOLD, color="#64748B"),
                             ],
                             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
@@ -206,7 +350,7 @@ def PromptsView(page: ft.Page):
             status_text.value = ""
         except Exception as err:
             status_text.value = f"Ошибка чтения: {err}"
-            status_text.color = ft.colors.RED_700
+            status_text.color = "#DC2626"
         page.update()
 
     cat_filter.on_change = load_prompts
@@ -218,8 +362,8 @@ def PromptsView(page: ft.Page):
             controls=[
                 ft.Column(
                     controls=[
-                        ft.Text("Библиотека AI-промтов", size=22, weight=ft.FontWeight.BOLD),
-                        ft.Text("Шаблоны инструкций для анализа разговоров нейросетью Gemini", size=13, color=ft.colors.GREY_600),
+                        ft.Text("Библиотека AI-промтов", size=24, weight=ft.FontWeight.BOLD, color="#0F172A"),
+                        ft.Text("Шаблоны инструкций для анализа разговоров нейросетью Gemini", size=13, color="#64748B"),
                     ],
                     spacing=2,
                 ),
@@ -228,13 +372,20 @@ def PromptsView(page: ft.Page):
                         cat_filter,
                         ft.ElevatedButton(
                             "Создать промт",
-                            icon=ft.icons.ADD,
-                            bgcolor=ft.colors.BLUE_700,
+                            icon=ft.icons.ADD_ROUNDED,
+                            bgcolor="#0C66E4",
                             color=ft.colors.WHITE,
-                            height=45,
+                            height=48,
+                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)),
                             on_click=open_add_modal,
                         ),
-                        ft.OutlinedButton("Обновить", icon=ft.icons.REFRESH, height=45, on_click=load_prompts),
+                        ft.OutlinedButton(
+                            "Обновить",
+                            icon=ft.icons.REFRESH_ROUNDED,
+                            height=48,
+                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)),
+                            on_click=load_prompts,
+                        ),
                     ],
                     spacing=10,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -246,10 +397,10 @@ def PromptsView(page: ft.Page):
     )
 
     return ft.Container(
-        padding=20,
+        padding=24,
         content=ft.Column(
-            controls=[header_block, ft.Divider(height=1), status_text, cards_column],
-            spacing=10,
+            controls=[header_block, ft.Divider(height=1, color="#E2E8F0"), status_text, cards_column],
+            spacing=12,
             expand=True,
         ),
         expand=True,

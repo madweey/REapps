@@ -9,10 +9,13 @@ from apps.core.auth import authenticate, load_session, save_session, clear_sessi
 from apps.meetings.meetings_view import MeetingsController
 from apps.admin.access_view import AccessView
 from apps.admin.links_view import LinksView
+from apps.admin.repair_settings_view import RepairSettingsView
 from apps.transcription.single_analysis_view import SingleAnalysisView
 from apps.transcription.batch_analysis_view import BatchAnalysisView
 from apps.transcription.prompts_view import PromptsView
 from apps.calculator.dp_view import DPView
+from apps.calculator.repair_view import RepairCalculatorView
+from apps.calculator.repair_rooms_view import RepairRoomsCalculatorView
 from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
 from apps.core.updater import check_for_updates, download_update_file, apply_update_and_restart, CURRENT_VERSION
@@ -149,10 +152,13 @@ def main(page: ft.Page):
         "meetings": None,
         "access": None,
         "links": None,
+        "repair_settings": None,
         "transcription_single": None,
         "transcription_batch": None,
         "transcription_prompts": None,
         "calc_dp": None,
+        "calc_repair": None,
+        "calc_repair_rooms": None,
     }
 
     login_name_input = ft.TextField(label="Имя сотрудника (Логин)", width=320, autofocus=True, height=48, border_radius=12)
@@ -678,10 +684,11 @@ def main(page: ft.Page):
                     title=ft.Text("Калькулятор", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
                     controls=[
                         make_nav_item("Калькулятор ДП", ft.icons.DRAW_OUTLINED, "calculator_dp", True),
-                        make_nav_item("Калькулятор ремонта", ft.icons.HOME_REPAIR_SERVICE_OUTLINED, "calculator_repair", True, badge="в разработке"),
+                        make_nav_item("Калькулятор ремонта", ft.icons.HOME_REPAIR_SERVICE_OUTLINED, "calculator_repair", True),
+                        make_nav_item("Калькулятор тест", ft.icons.SCIENCE_OUTLINED, "calc_repair_rooms", True),
                         make_nav_item("Смета", ft.icons.REQUEST_QUOTE_OUTLINED, "estimate", True, badge="в разработке"),
                     ],
-                    initially_expanded=active_nav_key["val"].startswith("calculator_") or active_nav_key["val"] == "estimate",
+                    initially_expanded=active_nav_key["val"].startswith("calculator_") or active_nav_key["val"] in ("estimate", "calc_repair_rooms"),
                 )
             )
 
@@ -696,8 +703,9 @@ def main(page: ft.Page):
                     controls=[
                         make_nav_item("Доступы", ft.icons.ADMIN_PANEL_SETTINGS_OUTLINED, "access", True),
                         make_nav_item("Ссылки", ft.icons.LINK, "links", True),
+                        make_nav_item("База работ ремонта", ft.icons.CONSTRUCTION_OUTLINED, "repair_settings", True),
                     ],
-                    initially_expanded=active_nav_key["val"] in ("access", "links"),
+                    initially_expanded=active_nav_key["val"] in ("access", "links", "repair_settings"),
                 )
             )
 
@@ -817,7 +825,13 @@ def main(page: ft.Page):
                         controllers_cache["calc_dp"] = DPView(page, user)
                     view_to_set = controllers_cache["calc_dp"]
                 elif key == "calculator_repair":
-                    view_to_set = build_in_development_view("Калькулятор ремонта")
+                    if not controllers_cache["calc_repair"]:
+                        controllers_cache["calc_repair"] = RepairCalculatorView()
+                    view_to_set = controllers_cache["calc_repair"]
+                elif key == "calc_repair_rooms":
+                    if not controllers_cache["calc_repair_rooms"]:
+                        controllers_cache["calc_repair_rooms"] = RepairRoomsCalculatorView()
+                    view_to_set = controllers_cache["calc_repair_rooms"]
                 elif key == "estimate":
                     view_to_set = build_in_development_view("Смета")
                 elif key == "reports":
@@ -830,6 +844,10 @@ def main(page: ft.Page):
                     if not controllers_cache["links"]:
                         controllers_cache["links"] = LinksView(page)
                     view_to_set = controllers_cache["links"]
+                elif key == "repair_settings":
+                    if not controllers_cache["repair_settings"]:
+                        controllers_cache["repair_settings"] = RepairSettingsView(page)
+                    view_to_set = controllers_cache["repair_settings"]
 
                 content_area.content = view_to_set
             finally:
