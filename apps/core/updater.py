@@ -5,7 +5,7 @@ import subprocess
 import threading
 import requests
 
-CURRENT_VERSION = "1.1.5"
+CURRENT_VERSION = "1.1.6"
 GITHUB_REPO = "madweey/REapps"
 RELEASE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
@@ -74,7 +74,7 @@ def check_for_updates() -> dict | None:
 
 def download_update_file(download_url: str, on_progress=None, on_success=None, on_error=None):
     """
-    Только скачивает файл обновления в Temp без закрытия приложения.
+    Скачивает файл обновления в Temp с валидацией размера.
     """
     def _worker():
         try:
@@ -92,7 +92,7 @@ def download_update_file(download_url: str, on_progress=None, on_success=None, o
                 except Exception:
                     pass
 
-            resp = requests.get(download_url, headers=HEADERS, stream=True, timeout=120)
+            resp = requests.get(download_url, headers=HEADERS, stream=True, timeout=180)
             resp.raise_for_status()
             total_len = int(resp.headers.get("content-length", 0))
 
@@ -104,6 +104,10 @@ def download_update_file(download_url: str, on_progress=None, on_success=None, o
                         downloaded += len(chunk)
                         if total_len > 0 and on_progress:
                             on_progress(downloaded / total_len)
+
+            # Проверка минимального размера (не менее 10 МБ для бинарника)
+            if os.path.exists(new_exe) and os.path.getsize(new_exe) < 1024 * 1024:
+                raise Exception("Скачанный файл поврежден или не является исполняемым файлом.")
 
             if on_success:
                 on_success()
@@ -117,10 +121,11 @@ def download_update_file(download_url: str, on_progress=None, on_success=None, o
 
 def apply_update_and_restart():
     """
-    Запускает скрипт PowerShell для подмены файла и перезапускает новую версию.
+    Запускает скрипт PowerShell для надежной подмены файла и перезапускает новую версию.
     """
     try:
         current_exe = os.path.abspath(sys.executable)
+        current_exe_name = os.path.basename(current_exe)
         temp_dir = tempfile.gettempdir()
         new_exe = os.path.join(temp_dir, "REapps_new.exe")
         log_file = os.path.join(temp_dir, "reapps_update.log")
@@ -137,44 +142,54 @@ function Log($msg) {{
 }}
 
 Log "Начало процесса обновления. PID приложения: {pid}"
+Log "Целевой файл: '{current_exe}'"
 
-# Ожидание выхода основного процесса
+# 1. Ожидание завершения основного процесса приложения
 $attempts = 0
-while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt 25)) {{
-    Start-Sleep -Milliseconds 300
+while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt 30)) {{
+    Start-Sleep -Milliseconds 250
     $attempts++
 }}
 
-Log "Завершение фоновых процессов..."
+# 2. Принудительное закрытие зависших процессов и flet-хостов
+Log "Завершение фоновых процессов по имени '{current_exe_name}'..."
 taskkill /F /PID {pid} /T 2>$null
-taskkill /F /IM REapps.exe /T 2>$null
-taskkill /F /IM flet.exe /T 2>$null
-Start-Sleep -Milliseconds 1000
+taskkill /F /IM "{current_exe_name}" /T 2>$null
+taskkill /F /IM "REapps.exe" /T 2>$null
+taskkill /F /IM "flet.exe" /T 2>$null
+Start-Sleep -Seconds 1
 
+# 3. Копирование нового бинарника
 Log "Копирование нового файла: '{new_exe}' -> '{current_exe}'"
 $copySuccess = $false
-for ($i = 0; $i -lt 25; $i++) {{
+for ($i = 0; $i -lt 35; $i++) {{
     try {{
         Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force -ErrorAction Stop
         $copySuccess = $true
         Log "Файл успешно заменен на попытке $i"
         break
     }} catch {{
-        Log "Попытка $i не удалась (файл занят): $_"
-        Start-Sleep -Milliseconds 500
+        Log "Попытка $i не удалась (файл занят дескриптором): $_"
+        Start-Sleep -Milliseconds 600
     }}
 }}
 
 if ($copySuccess) {{
-    Log "Удаление временного файла и запуск обновленной версии..."
+    Log "Очистка временных файлов..."
     Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
+    
+    # 4. Пауза перед перезапуском для гарантированного освобождения Mutex в ядре Windows
+    Log "Ожидание сброса Mutex ядра..."
+    Start-Sleep -Milliseconds 1200
+    
+    Log "Запуск обновленной версии..."
     Start-Process -FilePath '{current_exe}'
     Log "Обновление завершено успешно!"
 }} else {{
-    Log "ОШИБКА: Не удалось перезаписать файл приложения."
+    Log "КРИТИЧЕСКАЯ ОШИБКА: Не удалось перезаписать файл приложения за 35 попыток."
 }}
 
-Start-Sleep -Seconds 1
+Start-Sleep -Seconds 2
 Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 """
         with open(ps_script, "w", encoding="utf-8-sig") as f:

@@ -94,29 +94,54 @@ def update_meeting_status(row_idx: int, status: str) -> bool:
 
 
 def update_meeting_details(row_idx: int, details: dict) -> bool:
-    """Обновляет данные встречи при её редактировании."""
+    """Обновляет данные встречи при её редактировании или синхронизации с CRM."""
     sh = get_main_spreadsheet()
     ws = sh.worksheet("Встречи")
 
-    # Дата и время проведения встречи
+    # Дата и время проведения встречи (столбцы 1, 2, 3 / A, B, C)
     if "date" in details:
-        ws.update_cell(row_idx, 1, details["date"])
+        ws.update_cell(row_idx, 1, str(details["date"]))
     if "start" in details:
-        ws.update_cell(row_idx, 2, details["start"])
+        ws.update_cell(row_idx, 2, str(details["start"]))
     if "end" in details:
-        ws.update_cell(row_idx, 3, details["end"])
+        ws.update_cell(row_idx, 3, str(details["end"]))
 
-    # Ссылки, комментарии и параметры участников
-    if "call_url" in details:
-        ws.update_cell(row_idx, 10, details["call_url"])
-    if "comment" in details:
-        ws.update_cell(row_idx, 11, details["comment"])
-    if "hooks" in details:
-        ws.update_cell(row_idx, 12, details["hooks"])
-    if "meeting_type" in details:
-        ws.update_cell(row_idx, 17, details["meeting_type"])
-    if "host_manager" in details:
-        ws.update_cell(row_idx, 19, details["host_manager"])
+    # Данные из amoCRM (столбцы 4-9 / D, E, F, G, H, I)
+    mgr_val = details.get("manager") or details.get("Менеджер")
+    if mgr_val is not None:
+        ws.update_cell(row_idx, 4, str(mgr_val))
+
+    client_val = details.get("client") or details.get("Клиент")
+    if client_val is not None:
+        ws.update_cell(row_idx, 5, str(client_val))
+
+    deal_id_val = details.get("deal_id") or details.get("ID") or details.get("ID сделки")
+    if deal_id_val is not None:
+        ws.update_cell(row_idx, 6, str(deal_id_val))
+
+    complex_val = details.get("complex") or details.get("ЖК")
+    if complex_val is not None:
+        ws.update_cell(row_idx, 7, str(complex_val))
+
+    area_val = details.get("area") or details.get("Площадь")
+    if area_val is not None:
+        ws.update_cell(row_idx, 8, str(area_val))
+
+    deal_url_val = details.get("deal_url") or details.get("Ссылка на сделку")
+    if deal_url_val is not None:
+        ws.update_cell(row_idx, 9, str(deal_url_val))
+
+    # Ссылки, комментарии и параметры участников (столбцы 10, 11, 12, 17, 19)
+    if "call_url" in details or "Ссылка на звонок" in details:
+        ws.update_cell(row_idx, 10, str(details.get("call_url") or details.get("Ссылка на звонок") or ""))
+    if "comment" in details or "Комментарий" in details:
+        ws.update_cell(row_idx, 11, str(details.get("comment") or details.get("Комментарий") or ""))
+    if "hooks" in details or "Крючки" in details:
+        ws.update_cell(row_idx, 12, str(details.get("hooks") or details.get("Крючки") or ""))
+    if "meeting_type" in details or "Тип встречи" in details:
+        ws.update_cell(row_idx, 17, str(details.get("meeting_type") or details.get("Тип встречи") or ""))
+    if "host_manager" in details or "Кто проведет" in details:
+        ws.update_cell(row_idx, 19, str(details.get("host_manager") or details.get("Кто проведет") or ""))
 
     return True
 
