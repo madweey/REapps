@@ -554,9 +554,12 @@ class MeetingsModalManager:
 
     def refresh_meeting_crm_data(self, item: dict, sync_btn: ft.OutlinedButton):
         """Фоновое принудительное обновление данных из CRM."""
-        deal_url = item.get("deal_url", "").strip()
-        if not deal_url:
-            self.audio_status_text.value = "В карточке отсутствует ссылка на сделку!"
+        deal_url = (item.get("deal_url") or item.get("Ссылка на сделку") or "").strip()
+        deal_id = (item.get("deal_id") or item.get("ID") or item.get("ID сделки") or "").strip()
+        search_query = deal_url or deal_id
+
+        if not search_query:
+            self.audio_status_text.value = "В карточке отсутствует ссылка или ID сделки!"
             self.audio_status_text.color = "#DC2626"
             self.page.update()
             return
@@ -568,19 +571,25 @@ class MeetingsModalManager:
 
         def _worker():
             try:
-                crm_deal = find_deal_by_link(deal_url)
+                crm_deal = find_deal_by_link(search_query, force_refresh=True)
                 if not crm_deal:
                     self.audio_status_text.value = "Сделка не найдена в таблице выгрузки CRM!"
                     self.audio_status_text.color = "#DC2626"
                 else:
                     updated_fields = {
-                        "complex": crm_deal.get("complex", "") or item.get("complex", ""),
-                        "area": crm_deal.get("area", "") or item.get("area", ""),
-                        "client": crm_deal.get("client", "") or item.get("client", ""),
-                        "manager": crm_deal.get("manager", "") or item.get("manager", ""),
-                        "deal_id": crm_deal.get("deal_id", "") or item.get("deal_id", ""),
-                        "hooks": crm_deal.get("hooks", "") or item.get("hooks", ""),
-                        "comment": crm_deal.get("comment", "") or item.get("comment", ""),
+                        "complex": crm_deal.get("complex", "") or item.get("complex", "") or item.get("ЖК", ""),
+                        "area": crm_deal.get("area", "") or item.get("area", "") or item.get("Площадь", ""),
+                        "client": crm_deal.get("client", "") or item.get("client", "") or item.get("Клиент", ""),
+                        "manager": crm_deal.get("manager", "") or item.get("manager", "") or item.get("Менеджер", ""),
+                        "deal_id": crm_deal.get("deal_id", "") or item.get("deal_id", "") or item.get("ID", ""),
+                        "hooks": crm_deal.get("hooks", "") or item.get("hooks", "") or item.get("Крючки", ""),
+                        "comment": crm_deal.get("comment", "") or item.get("comment", "") or item.get("Комментарий", ""),
+                        "deal_url": crm_deal.get("deal_url", "") or deal_url,
+                        "rooms": crm_deal.get("rooms", "") or item.get("rooms", "") or item.get("Комнат", ""),
+                        "condition": crm_deal.get("condition", "") or item.get("condition", "") or item.get("Состояние", ""),
+                        "keys": crm_deal.get("keys", "") or item.get("keys", "") or item.get("Ключи", ""),
+                        "service_type": crm_deal.get("service_type", "") or item.get("service_type", "") or item.get("Тип услуги", ""),
+                        "pains": crm_deal.get("pains", "") or item.get("pains", "") or item.get("Боли", ""),
                     }
 
                     row_idx = item.get("row_idx")
@@ -588,8 +597,12 @@ class MeetingsModalManager:
                         update_meeting_details(row_idx, updated_fields)
 
                     item.update(updated_fields)
-                    self.open_meeting_details(item)
+                    item["ЖК"] = updated_fields["complex"]
+                    item["Площадь"] = updated_fields["area"]
+                    item["Клиент"] = updated_fields["client"]
+                    item["Менеджер"] = updated_fields["manager"]
 
+                    self.open_meeting_details(item)
                     self.audio_status_text.value = "Данные сделки успешно обновлены из CRM!"
                     self.audio_status_text.color = "#2E7D32"
                     self.on_data_changed()
@@ -605,15 +618,27 @@ class MeetingsModalManager:
     def open_meeting_details(self, item: dict):
         """Открывает детальное окно мгновенно без сетевых задержек."""
         self.cleanup_audio_player()
-        deal_url = item.get("deal_url", "")
-        call_url = item.get("call_url", "").strip()
+        deal_url = item.get("deal_url") or item.get("Ссылка на сделку") or ""
+        call_url = (item.get("call_url") or item.get("Ссылка на звонок") or "").strip()
 
-        deal_id = item.get("deal_id", "")
-        rooms = item.get("rooms", "")
-        condition = item.get("condition", "")
-        keys = item.get("keys", "")
-        service_type = item.get("service_type", "")
-        pains = item.get("pains", "")
+        deal_id = item.get("deal_id") or item.get("ID") or item.get("ID сделки") or ""
+        complex_name = item.get("complex") or item.get("ЖК") or ""
+        area_val = item.get("area") or item.get("Площадь") or ""
+        client_name = item.get("client") or item.get("Клиент") or ""
+        crm_manager = item.get("manager") or item.get("Менеджер") or "Не назначен"
+        host_mgr = item.get("host_manager") or item.get("Кто проведет") or "Не назначен"
+        creator_name = item.get("created_by") or item.get("Кто записал") or "Не указан"
+        meeting_status = item.get("status") or item.get("Статус") or ""
+
+        rooms = item.get("rooms") or item.get("Комнат") or ""
+        condition = item.get("condition") or item.get("Состояние") or ""
+        keys = item.get("keys") or item.get("Ключи") or ""
+        service_type = item.get("service_type") or item.get("Тип услуги") or ""
+        pains = item.get("pains") or item.get("Боли") or ""
+        hooks = item.get("hooks") or item.get("Крючки") or ""
+        comment_val = item.get("comment") or item.get("Комментарий") or ""
+        feedback_val = item.get("feedback") or item.get("Результат") or ""
+        meeting_url = item.get("meeting_url") or item.get("Ссылка на онлайн встречу") or ""
 
         audio_section = ft.Container()
         if call_url:
@@ -657,15 +682,15 @@ class MeetingsModalManager:
 
         def copy_transfer(e):
             rooms_str = f"{rooms} ком" if rooms else ""
-            id_complex_str = f"{deal_id} {item.get('complex', '')}".strip()
-            area_str = f"{item.get('area', '')} м²" if item.get('area') else ""
+            id_complex_str = f"{deal_id} {complex_name}".strip()
+            area_str = f"{area_val} м²" if area_val else ""
             tmpl = (
-                f"{item.get('client', '')}\n{id_complex_str}\n{area_str} {rooms_str}".strip() + "\n"
+                f"{client_name}\n{id_complex_str}\n{area_str} {rooms_str}".strip() + "\n"
                 f"Состояние: {condition}\nКлючи: {keys}\nТип услуги: {service_type}\n"
                 f"Тип встречи: {item.get('meeting_type', 'Онлайн встреча')}\nДата встречи/звонка: {item.get('date', '')}\n"
-                f"Время: {item.get('start', '')}\nВедущий встречи: {item.get('host_manager', '')}\n"
-                f"Записал(а): {item.get('created_by', '')}\nОтветственный CRM: {item.get('manager', '')}\n"
-                f"Крючки: {item.get('hooks', '')}\nБоли клиента: {pains}\nКомментарии КЦ: {item.get('comment', '')}\nСсылка CRM: {deal_url}"
+                f"Время: {item.get('start', '')}\nВедущий встречи: {host_mgr}\n"
+                f"Записал(а): {creator_name}\nОтветственный CRM: {crm_manager}\n"
+                f"Крючки: {hooks}\nБоли клиента: {pains}\nКомментарии КЦ: {comment_val}\nСсылка CRM: {deal_url}"
             )
             self.page.set_clipboard(tmpl)
             self.audio_status_text.value = "Форма для передачи скопирована!"
@@ -674,25 +699,24 @@ class MeetingsModalManager:
 
         def copy_result(e):
             rooms_str = f"{rooms} ком" if rooms else ""
-            id_complex_str = f"{deal_id} {item.get('complex', '')}".strip()
-            area_str = f"{item.get('area', '')} м²" if item.get('area') else ""
-            rec_val = item.get("meeting_url", "").strip()
-            rec_line = f"Ссылка на онлайн встречу: {rec_val}\n" if rec_val else ""
+            id_complex_str = f"{deal_id} {complex_name}".strip()
+            area_str = f"{area_val} м²" if area_val else ""
+            rec_line = f"Ссылка на онлайн встречу: {meeting_url}\n" if meeting_url else ""
             tmpl = (
-                f"{item.get('client', '')}\n{id_complex_str}\n{area_str} {rooms_str}".strip() + "\n"
+                f"{client_name}\n{id_complex_str}\n{area_str} {rooms_str}".strip() + "\n"
                 f"Состояние: {condition}\nКлючи: {keys}\nТип услуги: {service_type}\n"
                 f"Тип встречи: {item.get('meeting_type', 'Онлайн встреча')}\nДата встречи/звонка: {item.get('date', '')}\n"
-                f"Время: {item.get('start', '')}\nВедущий: {item.get('host_manager', '')}\n"
-                f"Записал(а): {item.get('created_by', '')}\nСтатус: {item.get('status', '')}\n"
-                f"ОС / Результат: {item.get('feedback', '')}\n{rec_line}Ссылка CRM: {deal_url}"
+                f"Время: {item.get('start', '')}\nВедущий: {host_mgr}\n"
+                f"Записал(а): {creator_name}\nСтатус: {meeting_status}\n"
+                f"ОС / Результат: {feedback_val}\n{rec_line}Ссылка CRM: {deal_url}"
             )
             self.page.set_clipboard(tmpl)
             self.audio_status_text.value = "Форма с результатом скопирована!"
             self.audio_status_text.color = "#2E7D32"
             self.page.update()
 
-        feedback_block = ft.Text(f"📋 ОС / Результат: {item['feedback']}", weight=ft.FontWeight.W_500, color="#0C66E4") if item.get("feedback") else ft.Container()
-        recording_block = ft.ElevatedButton("Запись встречи", icon=ft.icons.CLOUD_DOWNLOAD_ROUNDED, on_click=lambda e, u=item["meeting_url"]: self.page.launch_url(u)) if item.get("meeting_url") else ft.Container()
+        feedback_block = ft.Text(f"📋 ОС / Результат: {feedback_val}", weight=ft.FontWeight.W_500, color="#0C66E4") if feedback_val else ft.Container()
+        recording_block = ft.ElevatedButton("Запись встречи", icon=ft.icons.CLOUD_DOWNLOAD_ROUNDED, on_click=lambda e, u=meeting_url: self.page.launch_url(u)) if meeting_url else ft.Container()
 
         summary_block = ft.Container()
         if item.get("gpt_summary"):
@@ -706,17 +730,20 @@ class MeetingsModalManager:
                 border_radius=12,
             )
 
+        area_display = f"({area_val} м²)" if area_val else ""
+        jk_display = f"🏢 ЖК: {complex_name} {area_display}".strip()
+
         self.detail_content.controls = [
-            ft.Row([ft.Text(f"🕒 {item.get('start', '')} - {item.get('end', '')}", size=18, weight=ft.FontWeight.BOLD), ft.Text(f"Статус: {item.get('status', '')}", size=14, weight=ft.FontWeight.BOLD, color="#0C66E4")], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Row([ft.Text(f"🕒 {item.get('start', '')} - {item.get('end', '')}", size=18, weight=ft.FontWeight.BOLD), ft.Text(f"Статус: {meeting_status}", size=14, weight=ft.FontWeight.BOLD, color="#0C66E4")], alignment=ft.MainAxisAlignment.SPACE_BETWEEN, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ft.Divider(),
-            ft.Text(f"👤 Клиент: {item.get('client', '')}", weight=ft.FontWeight.BOLD),
-            ft.Text(f"🎯 Кто проведет встречу: {item.get('host_manager', 'Не назначен')}", weight=ft.FontWeight.W_600, color="#0C66E4"),
-            ft.Text(f"✍️ Кто записал: {item.get('created_by', 'Не указан')} | 👨‍💼 Менеджер CRM: {item.get('manager', 'Не назначен')}"),
-            ft.Text(f"🏢 ЖК: {item.get('complex', '')} ({item.get('area', '')} м²)"),
+            ft.Text(f"👤 Клиент: {client_name}", weight=ft.FontWeight.BOLD),
+            ft.Text(f"🎯 Кто проведет встречу: {host_mgr}", weight=ft.FontWeight.W_600, color="#0C66E4"),
+            ft.Text(f"✍️ Кто записал: {creator_name} | 👨‍💼 Менеджер CRM: {crm_manager}"),
+            ft.Text(jk_display if complex_name or area_val else "🏢 ЖК: не указан"),
             ft.Text(f"🚪 Комнат: {rooms} | Состояние: {condition} | Ключи: {keys}" if rooms or condition or keys else ""),
-            ft.Text(f"🎯 Крючки: {item.get('hooks', '')}", italic=True) if item.get("hooks") else ft.Container(),
+            ft.Text(f"🎯 Крючки: {hooks}", italic=True) if hooks else ft.Container(),
             ft.Text(f"⚡ Боли: {pains}", italic=True) if pains else ft.Container(),
-            ft.Text(f"💬 Комментарий: {item.get('comment', '')}") if item.get("comment") else ft.Container(),
+            ft.Text(f"💬 Комментарий: {comment_val}") if comment_val else ft.Container(),
             feedback_block, recording_block, summary_block,
             ft.Divider(), audio_section,
             ft.Row(
@@ -735,13 +762,18 @@ class MeetingsModalManager:
         self.page.update()
 
     def render_meeting_card(self, item: dict, is_registry: bool = False) -> ft.Control:
-        deal_link = item.get("deal_url", "")
-        meeting_type = item.get("meeting_type", "Онлайн встреча")
-        status = item.get("status", "Ожидает подтверждения")
+        deal_link = item.get("deal_url") or item.get("Ссылка на сделку") or ""
+        meeting_type = item.get("meeting_type") or item.get("Тип встречи") or "Онлайн встреча"
+        status = item.get("status") or item.get("Статус") or "Ожидает подтверждения"
         row_idx = item.get("row_idx")
-        host_m = item.get("host_manager") or "Не назначен"
-        created_b = item.get("created_by") or "Не указан"
-        crm_m = item.get("manager") or "Не назначен"
+        host_m = item.get("host_manager") or item.get("Кто проведет") or "Не назначен"
+        created_b = item.get("created_by") or item.get("Кто записал") or "Не указан"
+        crm_m = item.get("manager") or item.get("Менеджер") or "Не назначен"
+
+        complex_val = item.get("complex") or item.get("ЖК") or ""
+        area_val = item.get("area") or item.get("Площадь") or ""
+        area_str = f"({area_val} м²)" if area_val else ""
+        jk_str = f"🏢 {complex_val} {area_str}".strip() if (complex_val or area_val) else ""
 
         is_online = "онлайн" in meeting_type.lower()
         type_badge = ft.Container(
@@ -767,8 +799,8 @@ class MeetingsModalManager:
 
         def handle_open_complete(e, it=item):
             self.action_context["meeting"] = it
-            self.complete_feedback_input.value = it.get("feedback", "")
-            self.complete_recording_input.value = it.get("meeting_url", "")
+            self.complete_feedback_input.value = it.get("feedback") or it.get("Результат") or ""
+            self.complete_recording_input.value = it.get("meeting_url") or it.get("Ссылка на онлайн встречу") or ""
             self.complete_dialog.open = True
             self.page.update()
 
@@ -783,9 +815,9 @@ class MeetingsModalManager:
                 return
             self.action_context["meeting"] = it
             self.action_context["card_progress"] = prog
-            client_name = it.get("client") or "без имени"
-            meeting_date = it.get("date") or ""
-            meeting_time = it.get("start") or ""
+            client_name = it.get("client") or it.get("Клиент") or "без имени"
+            meeting_date = it.get("date") or it.get("Дата") or ""
+            meeting_time = it.get("start") or it.get("Время начала") or ""
             self.delete_confirm_text.value = f"Удалить встречу клиента '{client_name}' на {meeting_date} ({meeting_time})?"
             self.btn_delete_confirm.disabled = False
             self.btn_delete_confirm.text = "Удалить"
@@ -843,13 +875,13 @@ class MeetingsModalManager:
                 card_progress_bar,
                 ft.Row(
                     controls=[
-                        ft.Row([ft.Text(f"🕒 {item['start']} - {item['end']}", size=15, weight=ft.FontWeight.BOLD), type_badge], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                        ft.Text(f"📅 {item['date']} | 🏢 {item.get('complex', '')} ({item.get('area', '')} м²)", weight=ft.FontWeight.W_500, color="#334155"),
+                        ft.Row([ft.Text(f"🕒 {item.get('start', '')} - {item.get('end', '')}", size=15, weight=ft.FontWeight.BOLD), type_badge], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ft.Text(f"📅 {item.get('date', '')} | {jk_str}" if jk_str else f"📅 {item.get('date', '')}", weight=ft.FontWeight.W_500, color="#334155"),
                     ],
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                ft.Text(f"Клиент: {item.get('client', '')} | Менеджер CRM: {crm_m}", size=13),
+                ft.Text(f"Клиент: {item.get('client') or item.get('Клиент') or ''} | Менеджер CRM: {crm_m}", size=13),
                 ft.Row(
                     controls=[
                         ft.Container(content=ft.Row([ft.Icon(ft.icons.PERSON_ROUNDED, size=14, color="#0C66E4"), ft.Text(f"Проведет: {host_m}", size=12, weight=ft.FontWeight.BOLD, color="#0C66E4")], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER), bgcolor="#E9F2FF", padding=ft.padding.symmetric(horizontal=10, vertical=4), border_radius=10),
@@ -857,8 +889,8 @@ class MeetingsModalManager:
                     ],
                     spacing=8,
                 ),
-                ft.Text(f"Крючки: {item['hooks']}", size=12, italic=True, color="#475569") if item.get("hooks") else ft.Container(),
-                ft.Text(f"Комментарий: {item['comment']}", size=12, color="#64748B") if item.get("comment") else ft.Container(),
+                ft.Text(f"Крючки: {item.get('hooks') or item.get('Крючки')}", size=12, italic=True, color="#475569") if (item.get('hooks') or item.get('Крючки')) else ft.Container(),
+                ft.Text(f"Комментарий: {item.get('comment') or item.get('Комментарий')}", size=12, color="#64748B") if (item.get('comment') or item.get('Комментарий')) else ft.Container(),
                 ft.Row(
                     controls=[
                         crm_btn,
