@@ -6,7 +6,7 @@ import threading
 import requests
 import re
 
-CURRENT_VERSION = "1.1.8"
+CURRENT_VERSION = "1.1.9"
 GITHUB_REPO = "madweey/REapps"
 API_LATEST_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
