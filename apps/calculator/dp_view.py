@@ -11,34 +11,58 @@ from apps.core.sheets import get_dp_tariffs_info
 def DPView(page: ft.Page, current_user: dict | None = None):
     user_name = current_user.get("name", "Менеджер") if current_user else "Менеджер"
 
-    # Поля ввода параметров
+    # Поля ввода параметров One UI
     client_name_input = ft.TextField(
         label="Имя клиента",
         hint_text="Например: Иван Иванов",
-        prefix_icon=ft.icons.PERSON_OUTLINE,
-        border_radius=8,
+        prefix_icon=ft.icons.PERSON_OUTLINE_ROUNDED,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F8FAFC",
+        border_radius=12,
+        border_color="#CBD5E1",
         expand=True,
     )
     address_input = ft.TextField(
         label="Адрес объекта",
         hint_text="Например: г. Москва, ЖК 'Сердце Столицы'",
         prefix_icon=ft.icons.LOCATION_ON_OUTLINED,
-        border_radius=8,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F8FAFC",
+        border_radius=12,
+        border_color="#CBD5E1",
         expand=True,
     )
     area_input = ft.TextField(
         label="Площадь помещения (м²)",
         hint_text="Например: 75",
         keyboard_type=ft.KeyboardType.NUMBER,
-        prefix_icon=ft.icons.SQUARE_FOOT,
-        border_radius=8,
+        prefix_icon=ft.icons.SQUARE_FOOT_ROUNDED,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F8FAFC",
+        border_radius=12,
+        border_color="#CBD5E1",
         width=210,
     )
 
     promo_dropdown = ft.Dropdown(
         label="Условия акции / Скидка",
         value="Нет",
-        border_radius=8,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F8FAFC",
+        border_radius=12,
+        border_color="#CBD5E1",
         width=290,
         options=[
             ft.dropdown.Option("Нет"),
@@ -57,33 +81,38 @@ def DPView(page: ft.Page, current_user: dict | None = None):
         label="Текст акции для презентации",
         hint_text="Сформируется автоматически при выборе акции или введите свой...",
         prefix_icon=ft.icons.CAMPAIGN_OUTLINED,
-        border_radius=8,
+        height=48,
+        text_size=13,
+        label_style=ft.TextStyle(size=12, color="#64748B"),
+        filled=True,
+        fill_color="#F8FAFC",
+        border_radius=12,
+        border_color="#CBD5E1",
         expand=True,
     )
 
     # Виджеты тарифа ДП (Онлайн)
-    dp_cost_text = ft.Text("0 руб.", size=22, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_800)
-    dp_third_text = ft.Text("0 руб.", size=14, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_900)
-    dp_price_m2_text = ft.Text("0 руб./м²", size=13, color=ft.colors.GREY_700)
-    dp_deadline_text = ft.Text("-", size=13, weight=ft.FontWeight.W_600, color=ft.colors.BLACK87)
-    dp_target_text = ft.Text("Загрузка...", size=12, color=ft.colors.GREY_800)
-    dp_adv_text = ft.Text("Загрузка...", size=12, color=ft.colors.GREY_800)
+    dp_cost_text = ft.Text("0 руб.", size=22, weight=ft.FontWeight.BOLD, color="#0C66E4")
+    dp_third_text = ft.Text("0 руб.", size=14, weight=ft.FontWeight.BOLD, color="#0C66E4")
+    dp_price_m2_text = ft.Text("0 руб./м²", size=13, color="#64748B")
+    dp_deadline_text = ft.Text("-", size=13, weight=ft.FontWeight.W_600, color="#1E293B")
+    dp_target_text = ft.Text("Загрузка...", size=12, color="#475569")
+    dp_adv_text = ft.Text("Загрузка...", size=12, color="#475569")
 
     # Виджеты тарифа ОДП (С сопровождением)
-    odp_cost_text = ft.Text("0 руб.", size=22, weight=ft.FontWeight.BOLD, color=ft.colors.INDIGO_900)
-    odp_third_text = ft.Text("0 руб.", size=14, weight=ft.FontWeight.BOLD, color=ft.colors.INDIGO_900)
-    odp_price_m2_text = ft.Text("0 руб./м²", size=13, color=ft.colors.GREY_700)
-    odp_deadline_text = ft.Text("-", size=13, weight=ft.FontWeight.W_600, color=ft.colors.BLACK87)
-    odp_target_text = ft.Text("Загрузка...", size=12, color=ft.colors.GREY_800)
-    odp_adv_text = ft.Text("Загрузка...", size=12, color=ft.colors.GREY_800)
+    odp_cost_text = ft.Text("0 руб.", size=22, weight=ft.FontWeight.BOLD, color="#1E293B")
+    odp_third_text = ft.Text("0 руб.", size=14, weight=ft.FontWeight.BOLD, color="#1E293B")
+    odp_price_m2_text = ft.Text("0 руб./м²", size=13, color="#64748B")
+    odp_deadline_text = ft.Text("-", size=13, weight=ft.FontWeight.W_600, color="#1E293B")
+    odp_target_text = ft.Text("Загрузка...", size=12, color="#475569")
+    odp_adv_text = ft.Text("Загрузка...", size=12, color="#475569")
 
-    status_ring = ft.ProgressRing(width=22, height=22, stroke_width=3, visible=False)
-    status_text = ft.Text("", size=13, weight=ft.FontWeight.W_500)
+    status_ring = ft.ProgressRing(width=20, height=20, stroke_width=2.5, color="#0C66E4", visible=False)
+    status_text = ft.Text("", size=12, weight=ft.FontWeight.W_500)
     result_card = ft.Container(visible=False)
 
     calc_state = {"data": None, "discount_val": 0.0}
 
-    # Фоновая загрузка описания тарифов из листа 'Настройка' без подвисания интерфейса
     def load_tariffs_sheet_info_async():
         def _worker():
             try:
@@ -166,21 +195,21 @@ def DPView(page: ft.Page, current_user: dict | None = None):
             page.set_clipboard(url)
         except Exception:
             pass
-        status_text.value = "Ссылка на PDF скопирована в буфер обмена!"
-        status_text.color = ft.colors.GREEN_700
+        status_text.value = "Ссылка на PDF скопирована!"
+        status_text.color = "#15803D"
         page.update()
 
     def handle_generate_kp(e):
         if not calc_state["data"] or calc_state["data"]["area"] <= 0:
-            status_text.value = "Укажите площадь помещения!"
-            status_text.color = ft.colors.RED_700
+            status_text.value = "Сначала укажите площадь помещения!"
+            status_text.color = "#DC2626"
             page.update()
             return
 
         generate_btn.disabled = True
         status_ring.visible = True
-        status_text.value = "Генерация коммерческого предложения..."
-        status_text.color = ft.colors.BLUE_700
+        status_text.value = "Создание презентации и PDF..."
+        status_text.color = "#0C66E4"
         result_card.visible = False
         page.update()
 
@@ -194,49 +223,43 @@ def DPView(page: ft.Page, current_user: dict | None = None):
             )
 
             status_ring.visible = False
-            status_text.value = "Коммерческое предложение успешно создано!"
-            status_text.color = ft.colors.GREEN_700
+            status_text.value = "КП успешно сформировано!"
+            status_text.color = "#15803D"
 
-            result_card.content = ft.Card(
-                elevation=2,
-                color=ft.colors.BLUE_50,
-                content=ft.Container(
-                    padding=16,
-                    border_radius=10,
-                    content=ft.Column(
-                        controls=[
-                            ft.Row(
-                                controls=[
-                                    ft.Icon(ft.icons.CHECK_CIRCLE, color=ft.colors.GREEN_700, size=24),
-                                    ft.Text("Готовое коммерческое предложение сформировано:", weight=ft.FontWeight.BOLD, size=14),
-                                ],
-                                spacing=8,
-                            ),
-                            ft.Row(
-                                controls=[
-                                    ft.ElevatedButton(
-                                        "Открыть готовый PDF",
-                                        icon=ft.icons.PICTURE_AS_PDF,
-                                        bgcolor=ft.colors.RED_700,
-                                        color=ft.colors.WHITE,
-                                        url=res_kp["pdf_url"],
-                                    ),
-                                    ft.OutlinedButton(
-                                        "Открыть презентацию",
-                                        icon=ft.icons.SLIDESHOW,
-                                        url=res_kp["presentation_url"],
-                                    ),
-                                    ft.IconButton(
-                                        icon=ft.icons.COPY,
-                                        tooltip="Скопировать ссылку на PDF",
-                                        on_click=lambda ev: copy_pdf_link(res_kp["pdf_url"]),
-                                    ),
-                                ],
-                                spacing=12,
-                            ),
-                        ],
-                        spacing=10,
-                    ),
+            result_card.content = ft.Container(
+                bgcolor="#F0FDF4",
+                border=ft.border.all(1, "#BBF7D0"),
+                border_radius=14,
+                padding=14,
+                content=ft.Row(
+                    controls=[
+                        ft.Icon(ft.icons.CHECK_CIRCLE_ROUNDED, color="#15803D", size=24),
+                        ft.Text("Готовое коммерческое предложение:", weight=ft.FontWeight.BOLD, size=13, color="#166534"),
+                        ft.ElevatedButton(
+                            "Открыть готовый PDF",
+                            icon=ft.icons.PICTURE_AS_PDF_ROUNDED,
+                            bgcolor="#DC2626",
+                            color=ft.colors.WHITE,
+                            height=38,
+                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+                            url=res_kp["pdf_url"],
+                        ),
+                        ft.OutlinedButton(
+                            "Открыть презентацию",
+                            icon=ft.icons.SLIDESHOW_ROUNDED,
+                            height=38,
+                            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+                            url=res_kp["presentation_url"],
+                        ),
+                        ft.IconButton(
+                            icon=ft.icons.COPY_ALL_ROUNDED,
+                            tooltip="Скопировать ссылку на PDF",
+                            icon_color="#15803D",
+                            on_click=lambda ev: copy_pdf_link(res_kp["pdf_url"]),
+                        ),
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
             )
             result_card.visible = True
@@ -244,169 +267,167 @@ def DPView(page: ft.Page, current_user: dict | None = None):
         except Exception as ex:
             status_ring.visible = False
             status_text.value = f"Ошибка создания КП: {ex}"
-            status_text.color = ft.colors.RED_700
+            status_text.color = "#DC2626"
         finally:
             generate_btn.disabled = False
             page.update()
 
+    # Перемещенная кнопка генерации КП
     generate_btn = ft.ElevatedButton(
         "Сгенерировать КП в PDF",
-        icon=ft.icons.AUTO_AWESOME,
-        bgcolor=ft.colors.BLUE_700,
+        icon=ft.icons.AUTO_AWESOME_ROUNDED,
+        bgcolor="#0C66E4",
         color=ft.colors.WHITE,
-        height=45,
+        height=42,
+        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=12)),
         on_click=handle_generate_kp,
     )
 
     update_calculations()
 
     # Карточка Тарифа Онлайн
-    card_dp = ft.Card(
-        elevation=3,
+    card_dp = ft.Container(
         expand=True,
-        content=ft.Container(
-            padding=18,
-            border_radius=12,
-            bgcolor=ft.colors.WHITE,
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Container(
-                                content=ft.Icon(ft.icons.COMPUTER, color=ft.colors.BLUE_700, size=20),
-                                bgcolor=ft.colors.BLUE_50,
-                                padding=8,
-                                border_radius=8,
-                            ),
-                            ft.Column(
-                                controls=[
-                                    ft.Text("Тариф: ДП (Онлайн разработка)", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE_900),
-                                    ft.Text("Дистанционная разработка полного дизайн-проекта", size=11, color=ft.colors.GREY_600),
-                                ],
-                                spacing=1,
-                            ),
-                        ],
-                        spacing=10,
-                    ),
-                    ft.Divider(height=1, color=ft.colors.GREY_200),
-                    ft.Row(
-                        controls=[
-                            ft.Column([ft.Text("Итоговая стоимость:", size=11, color=ft.colors.GREY_600), dp_cost_text], spacing=2),
-                            ft.Column([ft.Text("Цена за м²:", size=11, color=ft.colors.GREY_600), dp_price_m2_text], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.END),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(
-                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                        border_radius=8,
-                        bgcolor=ft.colors.BLUE_50,
-                        content=ft.Row(
-                            controls=[
-                                ft.Icon(ft.icons.PAYMENTS_OUTLINED, size=18, color=ft.colors.BLUE_800),
-                                ft.Text("Оплата 1/3 (этап):", size=12, weight=ft.FontWeight.W_600, color=ft.colors.BLUE_900),
-                                dp_third_text,
-                            ],
-                            spacing=8,
-                            alignment=ft.MainAxisAlignment.START,
+        bgcolor=ft.colors.WHITE,
+        border=ft.border.all(1, "#E2E8F0"),
+        border_radius=16,
+        padding=18,
+        content=ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Container(
+                            content=ft.Icon(ft.icons.COMPUTER_ROUNDED, color="#0C66E4", size=20),
+                            bgcolor="#EBF3FC",
+                            padding=8,
+                            border_radius=10,
                         ),
-                    ),
-                    ft.Row(
+                        ft.Column(
+                            controls=[
+                                ft.Text("Тариф: ДП (Онлайн разработка)", size=15, weight=ft.FontWeight.BOLD, color="#1E293B"),
+                                ft.Text("Дистанционная разработка полного дизайн-проекта", size=11, color="#64748B"),
+                            ],
+                            spacing=1,
+                        ),
+                    ],
+                    spacing=10,
+                ),
+                ft.Divider(height=1, color="#F1F5F9"),
+                ft.Row(
+                    controls=[
+                        ft.Column([ft.Text("Итоговая стоимость:", size=11, color="#64748B"), dp_cost_text], spacing=2),
+                        ft.Column([ft.Text("Цена за м²:", size=11, color="#64748B"), dp_price_m2_text], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.END),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border_radius=10,
+                    bgcolor="#EBF3FC",
+                    content=ft.Row(
                         controls=[
-                            ft.Icon(ft.icons.ACCESS_TIME, size=17, color=ft.colors.GREY_700),
-                            ft.Text("Срок разработки:", size=12, color=ft.colors.GREY_700),
-                            dp_deadline_text,
+                            ft.Icon(ft.icons.PAYMENTS_OUTLINED, size=18, color="#0C66E4"),
+                            ft.Text("Оплата 1/3 (этап):", size=12, weight=ft.FontWeight.W_600, color="#0C66E4"),
+                            dp_third_text,
                         ],
-                        spacing=6,
+                        spacing=8,
+                        alignment=ft.MainAxisAlignment.START,
                     ),
-                    ft.Divider(height=1, color=ft.colors.GREY_200),
-                    ft.Column(
-                        controls=[
-                            ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE, size=15, color=ft.colors.BLUE_700), ft.Text("Кому подойдет:", size=12, weight=ft.FontWeight.BOLD)], spacing=6),
-                            dp_target_text,
-                            ft.Container(height=4),
-                            ft.Row([ft.Icon(ft.icons.STAR_BORDER, size=15, color=ft.colors.BLUE_700), ft.Text("Преимущества:", size=12, weight=ft.FontWeight.BOLD)], spacing=6),
-                            dp_adv_text,
-                        ],
-                        spacing=4,
-                    ),
-                ],
-                spacing=12,
-            ),
+                ),
+                ft.Row(
+                    controls=[
+                        ft.Icon(ft.icons.ACCESS_TIME_ROUNDED, size=17, color="#64748B"),
+                        ft.Text("Срок разработки:", size=12, color="#64748B"),
+                        dp_deadline_text,
+                    ],
+                    spacing=6,
+                ),
+                ft.Divider(height=1, color="#F1F5F9"),
+                ft.Column(
+                    controls=[
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE_ROUNDED, size=15, color="#0C66E4"), ft.Text("Кому подойдет:", size=12, weight=ft.FontWeight.BOLD, color="#1E293B")], spacing=6),
+                        dp_target_text,
+                        ft.Container(height=4),
+                        ft.Row([ft.Icon(ft.icons.STAR_BORDER_ROUNDED, size=15, color="#0C66E4"), ft.Text("Преимущества:", size=12, weight=ft.FontWeight.BOLD, color="#1E293B")], spacing=6),
+                        dp_adv_text,
+                    ],
+                    spacing=4,
+                ),
+            ],
+            spacing=12,
         ),
     )
 
     # Карточка Тарифа С сопровождением
-    card_odp = ft.Card(
-        elevation=3,
+    card_odp = ft.Container(
         expand=True,
-        content=ft.Container(
-            padding=18,
-            border_radius=12,
-            bgcolor=ft.colors.WHITE,
-            content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Container(
-                                content=ft.Icon(ft.icons.SUPPORT_AGENT, color=ft.colors.INDIGO_700, size=20),
-                                bgcolor=ft.colors.INDIGO_50,
-                                padding=8,
-                                border_radius=8,
-                            ),
-                            ft.Column(
-                                controls=[
-                                    ft.Text("Тариф: ОДП (С сопровождением)", size=16, weight=ft.FontWeight.BOLD, color=ft.colors.INDIGO_900),
-                                    ft.Text("Максимальный пакет с выездами дизайнера в салоны", size=11, color=ft.colors.GREY_600),
-                                ],
-                                spacing=1,
-                            ),
-                        ],
-                        spacing=10,
-                    ),
-                    ft.Divider(height=1, color=ft.colors.GREY_200),
-                    ft.Row(
-                        controls=[
-                            ft.Column([ft.Text("Итоговая стоимость:", size=11, color=ft.colors.GREY_600), odp_cost_text], spacing=2),
-                            ft.Column([ft.Text("Цена за м²:", size=11, color=ft.colors.GREY_600), odp_price_m2_text], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.END),
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Container(
-                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                        border_radius=8,
-                        bgcolor=ft.colors.INDIGO_50,
-                        content=ft.Row(
-                            controls=[
-                                ft.Icon(ft.icons.PAYMENTS_OUTLINED, size=18, color=ft.colors.INDIGO_800),
-                                ft.Text("Оплата 1/3 (этап):", size=12, weight=ft.FontWeight.W_600, color=ft.colors.INDIGO_900),
-                                odp_third_text,
-                            ],
-                            spacing=8,
-                            alignment=ft.MainAxisAlignment.START,
+        bgcolor=ft.colors.WHITE,
+        border=ft.border.all(1, "#E2E8F0"),
+        border_radius=16,
+        padding=18,
+        content=ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        ft.Container(
+                            content=ft.Icon(ft.icons.SUPPORT_AGENT_ROUNDED, color="#1E293B", size=20),
+                            bgcolor="#F1F5F9",
+                            padding=8,
+                            border_radius=10,
                         ),
-                    ),
-                    ft.Row(
+                        ft.Column(
+                            controls=[
+                                ft.Text("Тариф: ОДП (С сопровождением)", size=15, weight=ft.FontWeight.BOLD, color="#1E293B"),
+                                ft.Text("Максимальный пакет с выездами дизайнера в салоны", size=11, color="#64748B"),
+                            ],
+                            spacing=1,
+                        ),
+                    ],
+                    spacing=10,
+                ),
+                ft.Divider(height=1, color="#F1F5F9"),
+                ft.Row(
+                    controls=[
+                        ft.Column([ft.Text("Итоговая стоимость:", size=11, color="#64748B"), odp_cost_text], spacing=2),
+                        ft.Column([ft.Text("Цена за м²:", size=11, color="#64748B"), odp_price_m2_text], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.END),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                ft.Container(
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border_radius=10,
+                    bgcolor="#F1F5F9",
+                    content=ft.Row(
                         controls=[
-                            ft.Icon(ft.icons.ACCESS_TIME, size=17, color=ft.colors.GREY_700),
-                            ft.Text("Срок разработки:", size=12, color=ft.colors.GREY_700),
-                            odp_deadline_text,
+                            ft.Icon(ft.icons.PAYMENTS_OUTLINED, size=18, color="#1E293B"),
+                            ft.Text("Оплата 1/3 (этап):", size=12, weight=ft.FontWeight.W_600, color="#1E293B"),
+                            odp_third_text,
                         ],
-                        spacing=6,
+                        spacing=8,
+                        alignment=ft.MainAxisAlignment.START,
                     ),
-                    ft.Divider(height=1, color=ft.colors.GREY_200),
-                    ft.Column(
-                        controls=[
-                            ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE, size=15, color=ft.colors.INDIGO_700), ft.Text("Кому подойдет:", size=12, weight=ft.FontWeight.BOLD)], spacing=6),
-                            odp_target_text,
-                            ft.Container(height=4),
-                            ft.Row([ft.Icon(ft.icons.STAR_BORDER, size=15, color=ft.colors.INDIGO_700), ft.Text("Преимущества:", size=12, weight=ft.FontWeight.BOLD)], spacing=6),
-                            odp_adv_text,
-                        ],
-                        spacing=4,
-                    ),
-                ],
-                spacing=12,
-            ),
+                ),
+                ft.Row(
+                    controls=[
+                        ft.Icon(ft.icons.ACCESS_TIME_ROUNDED, size=17, color="#64748B"),
+                        ft.Text("Срок разработки:", size=12, color="#64748B"),
+                        odp_deadline_text,
+                    ],
+                    spacing=6,
+                ),
+                ft.Divider(height=1, color="#F1F5F9"),
+                ft.Column(
+                    controls=[
+                        ft.Row([ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE_ROUNDED, size=15, color="#1E293B"), ft.Text("Кому подойдет:", size=12, weight=ft.FontWeight.BOLD, color="#1E293B")], spacing=6),
+                        odp_target_text,
+                        ft.Container(height=4),
+                        ft.Row([ft.Icon(ft.icons.STAR_BORDER_ROUNDED, size=15, color="#1E293B"), ft.Text("Преимущества:", size=12, weight=ft.FontWeight.BOLD, color="#1E293B")], spacing=6),
+                        odp_adv_text,
+                    ],
+                    spacing=4,
+                ),
+            ],
+            spacing=12,
         ),
     )
 
@@ -416,9 +437,9 @@ def DPView(page: ft.Page, current_user: dict | None = None):
         padding=ft.padding.only(left=24, right=24, top=20, bottom=10),
         content=ft.Column(
             controls=[
-                ft.Text("Калькулятор Дизайн-Проекта (ДП)", size=22, weight=ft.FontWeight.BOLD),
-                ft.Text("Расчет тарифов Онлайн и С сопровождением с генерацией презентации", size=13, color=ft.colors.GREY_600),
-                ft.Divider(height=1, color=ft.colors.GREY_300),
+                ft.Text("Калькулятор Дизайн-Проекта (ДП)", size=22, weight=ft.FontWeight.BOLD, color="#0F172A"),
+                ft.Text("Расчет тарифов Онлайн и С сопровождением с генерацией презентации", size=13, color="#64748B"),
+                ft.Divider(height=1, color="#E2E8F0"),
             ],
             spacing=4,
         ),
@@ -429,19 +450,29 @@ def DPView(page: ft.Page, current_user: dict | None = None):
         expand=True,
         content=ft.Column(
             controls=[
-                ft.Text("Параметры объекта и клиента", size=15, weight=ft.FontWeight.BOLD),
+                ft.Text("Параметры объекта и клиента", size=15, weight=ft.FontWeight.BOLD, color="#1E293B"),
                 ft.Row(controls=[client_name_input, address_input], spacing=12),
                 ft.Row(controls=[area_input, promo_dropdown, promo_input], spacing=12),
-                ft.Container(height=6),
-                ft.Text("Сравнение тарифов и условий", size=15, weight=ft.FontWeight.BOLD),
-                ft.Row(controls=[card_dp, card_odp], spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
-                ft.Container(height=8),
+                ft.Container(height=4),
+                # Верхняя плашка действий с кнопкой генерации КП
                 ft.Row(
-                    controls=[generate_btn, status_ring, status_text],
-                    spacing=12,
+                    controls=[
+                        ft.Text("Сравнение тарифов и условий", size=15, weight=ft.FontWeight.BOLD, color="#1E293B"),
+                        ft.Row(
+                            controls=[
+                                status_ring,
+                                status_text,
+                                generate_btn,
+                            ],
+                            spacing=10,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 result_card,
+                ft.Row(controls=[card_dp, card_odp], spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
             ],
             spacing=14,
             scroll=ft.ScrollMode.AUTO,

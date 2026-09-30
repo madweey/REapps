@@ -4,6 +4,7 @@ import re
 import json
 import base64
 import time
+import shutil
 import urllib.parse
 import subprocess
 import requests
@@ -26,23 +27,62 @@ def get_bundle_dir() -> str:
 
 
 def get_binary_path(binary_name: str) -> str:
-    """Ищет бинарник в _MEIPASS, рядом с .exe, в корне проекта или возвращает системное имя."""
+    """
+    Глубокий поиск бинарника (ffmpeg.exe):
+    1. _MEIPASS (при PyInstaller onefile)
+    2. Рядом с .exe / в корне проекта
+    3. В подпапках bin/, ffmpeg/, ffmpeg/bin/
+    4. В LocalAppData / Roaming
+    5. Системный PATH через shutil.which
+    """
     exe_name = f"{binary_name}.exe" if sys.platform == "win32" and not binary_name.endswith(".exe") else binary_name
+
+    candidate_dirs = []
 
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
-        p = os.path.join(meipass, exe_name)
-        if os.path.exists(p):
-            return p
+        candidate_dirs.extend([
+            meipass,
+            os.path.join(meipass, "bin"),
+            os.path.join(meipass, "ffmpeg"),
+            os.path.join(meipass, "ffmpeg", "bin")
+        ])
 
     if getattr(sys, "frozen", False):
-        p = os.path.join(os.path.dirname(sys.executable), exe_name)
-        if os.path.exists(p):
-            return p
+        exe_dir = os.path.dirname(sys.executable)
+        candidate_dirs.extend([
+            exe_dir,
+            os.path.join(exe_dir, "bin"),
+            os.path.join(exe_dir, "ffmpeg"),
+            os.path.join(exe_dir, "ffmpeg", "bin")
+        ])
 
-    p = os.path.join(get_bundle_dir(), exe_name)
-    if os.path.exists(p):
-        return p
+    root_dir = get_bundle_dir()
+    candidate_dirs.extend([
+        root_dir,
+        os.path.join(root_dir, "bin"),
+        os.path.join(root_dir, "ffmpeg"),
+        os.path.join(root_dir, "ffmpeg", "bin")
+    ])
+
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    if local_app_data:
+        candidate_dirs.extend([
+            os.path.join(local_app_data, "REapps", "bin"),
+            os.path.join(local_app_data, "Programs", "ffmpeg", "bin"),
+            os.path.join(local_app_data, "Microsoft", "WinGet", "Links")
+        ])
+
+    for cdir in candidate_dirs:
+        if cdir and os.path.isdir(cdir):
+            target = os.path.join(cdir, exe_name)
+            if os.path.exists(target):
+                return os.path.abspath(target)
+
+    # Проверка через системный PATH
+    sys_path_find = shutil.which(binary_name) or shutil.which(exe_name)
+    if sys_path_find:
+        return sys_path_find
 
     return binary_name
 
@@ -142,56 +182,76 @@ def extract_audio_with_ffmpeg(input_path: str, progress_callback=None) -> str:
         output_path
     ]
 
+    creationflags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
     try:
-        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, creationflags=creationflags)
         return output_path
-    except Exception:
-        if input_path.lower().endswith((".mp3", ".wav", ".m4a", ".aac")):
+    except Exception as ex:
+        if input_path.lower().endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg")):
             return input_path
-        raise Exception("Ошибка обработки ffmpeg. Проверьте наличие ffmpeg.exe.")
+        raise Exception(f"Ошибка обработки ffmpeg: {ex}. Убедитесь, что ffmpeg.exe лежит рядом с программой или в папке bin/")
 
 
-def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callback=None) -> dict:
-    key = get_current_gemini_key()
-    if not key:
-        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11)!")
+def extract_audio_to_folder(source_type: str, source_val: str, output_folder: str, custom_name: str = "", progress_callback=None) -> str:
+    """
+    Извлекает чистое аудио (MP3 192k) из видео (файла или ссылки) в указанную пользователем папку.
+    """
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder, exist_ok=True)
 
-    if progress_callback:
-        progress_callback("Чтение и кодирование звука...")
+    local_input = ""
+    is_temp = False
 
-    with open(audio_path, "rb") as f:
-        audio_bytes = f.read()
+    try:
+        if source_type == "url":
+            if progress_callback:
+                progress_callback("Скачивание видео по ссылке...")
+            temp_name = f"download_{int(time.time())}.dat"
+            local_input = download_file_stream(source_val, temp_name, progress_callback)
+            is_temp = True
+            base_title = custom_name.strip() or f"audio_{int(time.time())}"
+        else:
+            local_input = source_val
+            base_title = custom_name.strip() or os.path.splitext(os.path.basename(source_val))[0]
 
-    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        safe_title = re.sub(r'[\\/*?:"<>|]', "", base_title).strip() or "extracted_audio"
+        out_file_path = os.path.join(output_folder, f"{safe_title}.mp3")
 
-    full_instruction = (
-        f"{prompt_text}\n\n"
-        "СТРОГО СОБЛЮДАЙ ФОРМАТ ВЫВОДА! Раздели весь ответ на три блока с точными маркерами:\n\n"
-        "---ТРАНСКРИПЦИЯ---\n"
-        "(Полная дословная транскрипция разговора по ролям с таймкодами)\n\n"
-        "---ОТЧЕТ ИИ---\n"
-        "(Структурированный разбор разговора согласно инструкции выше)\n\n"
-        "---КРАТКОЕ САММАРИ---\n"
-        "(2-3 емких ключевых предложения с итогом разговора для CRM)"
-    )
+        counter = 1
+        while os.path.exists(out_file_path):
+            out_file_path = os.path.join(output_folder, f"{safe_title}_{counter}.mp3")
+            counter += 1
 
+        if progress_callback:
+            progress_callback("Извлечение аудиодорожки (MP3)...")
+
+        ffmpeg_bin = get_binary_path("ffmpeg")
+        cmd = [
+            ffmpeg_bin, "-y", "-i", local_input,
+            "-vn", "-acodec", "libmp3lame",
+            "-q:a", "2",
+            out_file_path
+        ]
+
+        creationflags = 0x08000000 if sys.platform == "win32" else 0
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=creationflags)
+        if proc.returncode != 0:
+            err_text = proc.stderr.decode("utf-8", errors="ignore")
+            raise RuntimeError(f"FFmpeg ошибка: {err_text[:200]}")
+
+        return out_file_path
+
+    finally:
+        if is_temp and local_input and os.path.exists(local_input):
+            try:
+                os.remove(local_input)
+            except Exception:
+                pass
+
+
+def _post_gemini_request(payload: dict, progress_callback=None, step_label: str = "") -> dict:
     url = get_gemini_url(MODEL_NAME)
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": full_instruction},
-                    {
-                        "inline_data": {
-                            "mime_type": "audio/mp3",
-                            "data": audio_b64,
-                        }
-                    }
-                ]
-            }
-        ]
-    }
 
     _, enable_foreign = load_tunnel_states()
     _, foreign_keys = get_split_vpn_keys()
@@ -209,16 +269,14 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
             try:
                 if key_or_none:
                     if progress_callback:
-                        msg = "Отправка в Gemini через туннель..." if attempt == 0 else f"Повтор {attempt + 1}/3..."
-                        progress_callback(msg)
+                        progress_callback(f"{step_label} через туннель (попытка {attempt + 1})...")
                     with OnDemandTunnel(key_or_none, local_http_port=20820) as proxy_url:
                         proxies = {"http": proxy_url, "https": proxy_url}
-                        resp = requests.post(url, headers=headers, json=payload, timeout=120, proxies=proxies)
+                        resp = requests.post(url, headers=headers, json=payload, timeout=160, proxies=proxies)
                 else:
                     if progress_callback:
-                        msg = "Отправка в Gemini напрямую..." if attempt == 0 else f"Повтор {attempt + 1}/3..."
-                        progress_callback(msg)
-                    resp = requests.post(url, headers=headers, json=payload, timeout=120)
+                        progress_callback(f"{step_label} напрямую (попытка {attempt + 1})...")
+                    resp = requests.post(url, headers=headers, json=payload, timeout=160)
 
                 if resp.status_code == 200:
                     last_resp = resp
@@ -248,34 +306,112 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
         err_detail = last_resp.text if last_resp else str(last_err)
         raise Exception(f"Ошибка Gemini API: {err_detail}")
 
-    resp_data = last_resp.json()
-    result_text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+    return last_resp.json()
 
-    transcription = ""
-    full_report = ""
+
+def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callback=None) -> dict:
+    """
+    Двухэтапная обработка записи любой длины:
+    1. Гарантированный аналитический разбор РОПа и Саммари (не обрезается лимитом).
+    2. Дословная транскрипция с таймкодами.
+    """
+    key = get_current_gemini_key()
+    if not key:
+        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11/M12)!")
+
+    if progress_callback:
+        progress_callback("Подготовка аудио к анализу...")
+
+    ext = os.path.splitext(audio_path)[1].lower()
+    mime_type_map = {
+        ".mp3": "audio/mp3",
+        ".wav": "audio/wav",
+        ".m4a": "audio/m4a",
+        ".aac": "audio/aac",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac"
+    }
+    mime_type = mime_type_map.get(ext, "audio/mp3")
+
+    with open(audio_path, "rb") as f:
+        audio_bytes = f.read()
+
+    audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+    # ЭТАП 1: Анализ РОПа и Краткое Саммари (Приоритет №1)
+    prompt_stage1 = (
+        f"{prompt_text}\n\n"
+        "ВАЖНО! Сформируй ответ строго по двум блокам с указанными заголовками:\n\n"
+        "---КРАТКОЕ САММАРИ---\n"
+        "(2-3 емких ключевых предложения с сутью и итогом разговора для CRM)\n\n"
+        "---ОТЧЕТ ИИ---\n"
+        "(Полный структурированный разбор разговора согласно инструкции выше: боли, возражения, договоренности)"
+    )
+
+    payload_analysis = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt_stage1},
+                    {"inline_data": {"mime_type": mime_type, "data": audio_b64}}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 8192
+        }
+    }
+
+    resp_analysis = _post_gemini_request(payload_analysis, progress_callback, "AI-анализ разговора")
+    text_analysis = resp_analysis["candidates"][0]["content"]["parts"][0]["text"]
+
     summary = ""
+    full_report = ""
 
-    if "---ТРАНСКРИПЦИЯ---" in result_text and "---ОТЧЕТ ИИ---" in result_text:
-        parts_after_tr = result_text.split("---ТРАНСКРИПЦИЯ---", 1)[1]
-        tr_part, rest = parts_after_tr.split("---ОТЧЕТ ИИ---", 1)
-        transcription = tr_part.strip()
+    # Извлечение Саммари и Отчета с защитой регулярными выражениями
+    sum_match = re.search(r"---КРАТКОЕ САММАРИ---(.*?)(?=---ОТЧЕТ ИИ---|$)", text_analysis, re.DOTALL | re.IGNORECASE)
+    rep_match = re.search(r"---ОТЧЕТ ИИ---(.*)", text_analysis, re.DOTALL | re.IGNORECASE)
 
-        if "---КРАТКОЕ САММАРИ---" in rest:
-            rep_part, sum_part = rest.split("---КРАТКОЕ САММАРИ---", 1)
-            full_report = rep_part.strip()
-            summary = sum_part.strip()
-        else:
-            full_report = rest.strip()
-            summary = full_report[:250] + "..."
-    elif "---КРАТКОЕ САММАРИ---" in result_text:
-        rep_part, sum_part = result_text.split("---КРАТКОЕ САММАРИ---", 1)
-        full_report = rep_part.strip()
-        summary = sum_part.strip()
-        transcription = full_report
-    else:
-        full_report = result_text.strip()
-        transcription = full_report
+    if sum_match:
+        summary = sum_match.group(1).strip()
+    if rep_match:
+        full_report = rep_match.group(1).strip()
+
+    if not full_report:
+        full_report = text_analysis.strip()
+    if not summary:
         summary = full_report[:250] + "..."
+
+    # ЭТАП 2: Дословная транскрипция с таймкодами
+    prompt_stage2 = (
+        "Сделай подробную дословную транскрипцию всего разговора на русском языке с таймкодами и разделением по ролям (например: 00:00 М1: ..., 00:05 М2: ...).\n"
+        "СТРОГО начни вывод сразу со строки:\n"
+        "---ТРАНСКРИПЦИЯ---"
+    )
+
+    payload_transcription = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt_stage2},
+                    {"inline_data": {"mime_type": mime_type, "data": audio_b64}}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 8192
+        }
+    }
+
+    try:
+        resp_transcription = _post_gemini_request(payload_transcription, progress_callback, "Стенограмма аудио")
+        text_transcription = resp_transcription["candidates"][0]["content"]["parts"][0]["text"]
+        tr_match = re.search(r"---ТРАНСКРИПЦИЯ---(.*)", text_transcription, re.DOTALL | re.IGNORECASE)
+        transcription = tr_match.group(1).strip() if tr_match else text_transcription.strip()
+    except Exception as e:
+        transcription = f"Стенограмма не была сформирована: {e}"
 
     return {
         "transcription": transcription,
@@ -287,7 +423,7 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
 def analyze_batch_summaries_with_gemini(summaries: list[dict], meta_prompt: str) -> str:
     key = get_current_gemini_key()
     if not key:
-        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11)!")
+        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11/M12)!")
 
     context_lines = []
     for idx, s in enumerate(summaries, start=1):
@@ -305,51 +441,13 @@ def analyze_batch_summaries_with_gemini(summaries: list[dict], meta_prompt: str)
         "Сформируй четкий аналитический отчет."
     )
 
-    url = get_gemini_url(MODEL_NAME)
-    headers = {"Content-Type": "application/json"}
-    payload = {"contents": [{"parts": [{"text": instruction}]}]}
+    payload = {
+        "contents": [{"parts": [{"text": instruction}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 8192
+        }
+    }
 
-    _, enable_foreign = load_tunnel_states()
-    _, foreign_keys = get_split_vpn_keys()
-
-    candidates = foreign_keys.copy() if (enable_foreign and foreign_keys) else []
-    candidates.append(None)
-
-    last_resp = None
-    last_err = None
-
-    for key_or_none in candidates:
-        for attempt in range(3):
-            try:
-                if key_or_none:
-                    with OnDemandTunnel(key_or_none, local_http_port=20820) as proxy_url:
-                        proxies = {"http": proxy_url, "https": proxy_url}
-                        resp = requests.post(url, headers=headers, json=payload, timeout=60, proxies=proxies)
-                else:
-                    resp = requests.post(url, headers=headers, json=payload, timeout=60)
-
-                if resp.status_code == 200:
-                    last_resp = resp
-                    break
-
-                if resp.status_code == 503:
-                    last_resp = resp
-                    last_err = resp.text
-                    time.sleep(3)
-                    continue
-
-                last_resp = resp
-                last_err = resp.text
-                break
-            except Exception as ex:
-                last_err = str(ex)
-                break
-
-        if last_resp and last_resp.status_code == 200:
-            break
-
-    if not last_resp or last_resp.status_code != 200:
-        err_detail = last_resp.text if last_resp else str(last_err)
-        raise Exception(f"Ошибка Gemini API: {err_detail}")
-
-    return last_resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+    res_json = _post_gemini_request(payload, None, "Пакетный анализ встреч")
+    return res_json["candidates"][0]["content"]["parts"][0]["text"]

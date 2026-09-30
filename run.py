@@ -13,14 +13,15 @@ from apps.admin.repair_settings_view import RepairSettingsView
 from apps.transcription.single_analysis_view import SingleAnalysisView
 from apps.transcription.batch_analysis_view import BatchAnalysisView
 from apps.transcription.prompts_view import PromptsView
+from apps.transcription.audio_extractor_view import AudioExtractorView
 from apps.calculator.dp_view import DPView
-from apps.calculator.repair_view import RepairCalculatorView
 from apps.calculator.repair_rooms_view import RepairRoomsCalculatorView
 from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
 from apps.core.updater import check_for_updates, download_update_file, apply_update_and_restart, CURRENT_VERSION
 
 MUTEX_HANDLE = None
+
 
 def get_asset_path(filename: str) -> str:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -156,9 +157,9 @@ def main(page: ft.Page):
         "transcription_single": None,
         "transcription_batch": None,
         "transcription_prompts": None,
+        "transcription_extractor": None,
         "calc_dp": None,
         "calc_repair": None,
-        "calc_repair_rooms": None,
     }
 
     login_name_input = ft.TextField(label="Имя сотрудника (Логин)", width=320, autofocus=True, height=48, border_radius=12)
@@ -177,9 +178,6 @@ def main(page: ft.Page):
 
     splash_status = ft.Text("Подключение к Google Таблицам...", size=13, color="#616161")
 
-    # ==========================================
-    # ДИАЛОГ АВТООБНОВЛЕНИЯ
-    # ==========================================
     def prompt_update_dialog(update_info: dict):
         prog_bar = ft.ProgressBar(width=420, value=0, visible=False, color="#0C66E4")
         status_lbl = ft.Text("", size=11, color="#616161")
@@ -671,6 +669,7 @@ def main(page: ft.Page):
                     controls=[
                         make_nav_item("Разбор звонка / встречи", ft.icons.RECORD_VOICE_OVER, "transcription_single", True),
                         make_nav_item("Анализ разборов (пакетный)", ft.icons.ANALYTICS_OUTLINED, "transcription_batch", True),
+                        make_nav_item("Извлечение звука", ft.icons.HEADSET_ROUNDED, "transcription_extractor", True),
                         make_nav_item("Промты", ft.icons.PSYCHOLOGY, "transcription_prompts", True),
                     ],
                     initially_expanded=active_nav_key["val"].startswith("transcription_"),
@@ -684,11 +683,9 @@ def main(page: ft.Page):
                     title=ft.Text("Калькулятор", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
                     controls=[
                         make_nav_item("Калькулятор ДП", ft.icons.DRAW_OUTLINED, "calculator_dp", True),
-                        make_nav_item("Калькулятор ремонта", ft.icons.HOME_REPAIR_SERVICE_OUTLINED, "calculator_repair", True),
-                        make_nav_item("Калькулятор тест", ft.icons.SCIENCE_OUTLINED, "calc_repair_rooms", True),
-                        make_nav_item("Смета", ft.icons.REQUEST_QUOTE_OUTLINED, "estimate", True, badge="в разработке"),
+                        make_nav_item("Калькулятор ремонта", ft.icons.HOME_REPAIR_SERVICE_OUTLINED, "calc_repair", True),
                     ],
-                    initially_expanded=active_nav_key["val"].startswith("calculator_") or active_nav_key["val"] in ("estimate", "calc_repair_rooms"),
+                    initially_expanded=active_nav_key["val"].startswith("calc_") or active_nav_key["val"] == "calculator_dp",
                 )
             )
 
@@ -816,6 +813,10 @@ def main(page: ft.Page):
                     if not controllers_cache["transcription_batch"]:
                         controllers_cache["transcription_batch"] = BatchAnalysisView(page)
                     view_to_set = controllers_cache["transcription_batch"]
+                elif key == "transcription_extractor":
+                    if not controllers_cache["transcription_extractor"]:
+                        controllers_cache["transcription_extractor"] = AudioExtractorView(page)
+                    view_to_set = controllers_cache["transcription_extractor"]
                 elif key == "transcription_prompts":
                     if not controllers_cache["transcription_prompts"]:
                         controllers_cache["transcription_prompts"] = PromptsView(page)
@@ -824,16 +825,11 @@ def main(page: ft.Page):
                     if not controllers_cache["calc_dp"]:
                         controllers_cache["calc_dp"] = DPView(page, user)
                     view_to_set = controllers_cache["calc_dp"]
-                elif key == "calculator_repair":
+                elif key == "calc_repair":
+                    # Единый кэшируемый контроллер Калькулятора ремонта
                     if not controllers_cache["calc_repair"]:
-                        controllers_cache["calc_repair"] = RepairCalculatorView()
+                        controllers_cache["calc_repair"] = RepairRoomsCalculatorView()
                     view_to_set = controllers_cache["calc_repair"]
-                elif key == "calc_repair_rooms":
-                    if not controllers_cache["calc_repair_rooms"]:
-                        controllers_cache["calc_repair_rooms"] = RepairRoomsCalculatorView()
-                    view_to_set = controllers_cache["calc_repair_rooms"]
-                elif key == "estimate":
-                    view_to_set = build_in_development_view("Смета")
                 elif key == "reports":
                     view_to_set = build_in_development_view("Отчеты")
                 elif key == "access":
