@@ -144,65 +144,83 @@ def download_update_file(download_url: str, on_progress=None, on_success=None, o
 
 def apply_update_and_restart():
     """
-    Создаёт автономный bat-скрипт обновления, полностью отвязывает его от текущего процесса
-    и даёт приложению корректно и мягко завершиться для очистки папки Temp.
+    Создаёт тихий автономный скрипт VBScript (wscript), который выполняется в фоне
+    без единого консольного окна, дожидается закрытия программы, аккуратно заменяет
+    файл и запускает обновлённое приложение.
     """
     try:
         current_exe = os.path.abspath(sys.executable)
         current_dir = os.path.dirname(current_exe)
         temp_dir = tempfile.gettempdir()
         new_exe = os.path.join(temp_dir, "REapps_new.exe")
-        updater_bat = os.path.join(temp_dir, "reapps_runner.bat")
-        pid = os.getpid()
+        vbs_script = os.path.join(temp_dir, "reapps_updater.vbs")
 
-        # Создаём пакетный файл, который ждёт закрытия процесса, не блокируя удаление временных файлов PyInstaller
-        bat_content = f"""@echo off
-chcp 65001 >nul
-timeout /t 2 /nobreak >nul
+        # Двойные кавычки для корректной подстановки путей внутри VBS
+        vbs_current_exe = current_exe.replace('"', '""')
+        vbs_new_exe = new_exe.replace('"', '""')
+        vbs_current_dir = current_dir.replace('"', '""')
 
-:WAIT_LOOP
-tasklist /fi "PID eq {pid}" | findstr /i "{pid}" >nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto WAIT_LOOP
-)
+        vbs_content = f'''Dim fso, shell
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set shell = CreateObject("WScript.Shell")
 
-:: Пауза для полной выгрузки дескрипторов библиотек
-timeout /t 2 /nobreak >nul
+' Пауза 2.5 секунды: за это время приложение полностью закрывается,
+' а PyInstaller спокойно выгружает свои библиотеки и удаляет папку MEI
+WScript.Sleep 2500
 
-:COPY_LOOP
-copy /y "{new_exe}" "{current_exe}" >nul 2>&1
-if errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto COPY_LOOP
-)
+' Попытка замены файла (до 15 попыток с интервалом в полсекунды)
+Dim replaced, i
+replaced = False
 
-del /f /q "{new_exe}" >nul 2>&1
+For i = 1 To 15
+    On Error Resume Next
+    If fso.FileExists("{vbs_new_exe}") Then
+        fso.CopyFile "{vbs_new_exe}", "{vbs_current_exe}", True
+        If Err.Number = 0 Then
+            replaced = True
+            Err.Clear
+            Exit For
+        End If
+        Err.Clear
+    End If
+    On Error GoTo 0
+    WScript.Sleep 500
+Next
 
-:: Запуск обновленного приложения
-cd /d "{current_dir}"
-start "" "{current_exe}"
+' Удаляем временный скачанный файл
+On Error Resume Next
+If fso.FileExists("{vbs_new_exe}") Then
+    fso.DeleteFile "{vbs_new_exe}", True
+End If
+Err.Clear
+On Error GoTo 0
 
-:: Самоудаление батника
-del "%~f0" >nul 2>&1
-exit
-"""
-        with open(updater_bat, "w", encoding="cp1251", errors="ignore") as f:
-            f.write(bat_content)
+' Запускаем обновленное приложение
+If replaced Then
+    shell.CurrentDirectory = "{vbs_current_dir}"
+    shell.Run """{vbs_current_exe}""", 1, False
+End If
 
-        # Флаги для полного отрыва внешнего процесса от родительского
+' Удаляем сам VBScript скрипт
+On Error Resume Next
+fso.DeleteFile WScript.ScriptFullName, True
+'''
+        with open(vbs_script, "w", encoding="cp1251", errors="ignore") as f:
+            f.write(vbs_content)
+
+        # wscript.exe выполняет скрипты GUI без открытия черных окон
         DETACHED_PROCESS = 0x00000008
         CREATE_NO_WINDOW = 0x08000000
 
         subprocess.Popen(
-            ["cmd.exe", "/c", updater_bat],
+            ["wscript.exe", vbs_script],
             creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
             close_fds=True,
             shell=False
         )
 
-        # Мягкое завершение текущего приложения
-        sys.exit(0)
+        # Принудительный быстрый выход на уровне ОС (окно Flet к этому моменту уже закрыто)
+        os._exit(0)
     except Exception as e:
         print(f"[Updater] Сбой перезапуска: {e}")
-        sys.exit(1)
+        os._exit(1)
