@@ -191,9 +191,14 @@ def main(page: ft.Page):
         )
         btn_cancel = ft.TextButton("Напомнить позже")
 
+        dlg = None
+
         def close_dlg(e=None):
-            dlg.open = False
-            page.update()
+            if hasattr(page, "close"):
+                page.close(dlg)
+            else:
+                dlg.open = False
+                page.update()
 
         def do_restart(e):
             btn_action.disabled = True
@@ -282,10 +287,15 @@ def main(page: ft.Page):
             actions=[btn_cancel, btn_action],
         )
 
-        if dlg not in page.overlay:
-            page.overlay.append(dlg)
-        dlg.open = True
-        page.update()
+        try:
+            if hasattr(page, "open"):
+                page.open(dlg)
+            else:
+                page.dialog = dlg
+                dlg.open = True
+                page.update()
+        except Exception as ex:
+            print(f"[Updater UI Error] {ex}")
 
     def start_background_update_check():
         if update_checked["done"]:
@@ -293,19 +303,14 @@ def main(page: ft.Page):
         update_checked["done"] = True
 
         def _worker():
-            info = check_for_updates()
-            if info:
-                try:
-                    if hasattr(page, "run_thread"):
-                        page.run_thread(prompt_update_dialog, info)
-                    elif hasattr(page, "loop") and page.loop and page.loop.is_running():
-                        page.loop.call_soon_threadsafe(prompt_update_dialog, info)
-                    else:
-                        prompt_update_dialog(info)
-                except Exception:
+            try:
+                info = check_for_updates()
+                if info:
                     prompt_update_dialog(info)
+            except Exception as e:
+                print(f"[Updater Worker Error] {e}")
 
-        threading.Thread(target=_worker, daemon=True).start()
+        threading.Timer(1.5, _worker).start()
 
     def render_splash_screen():
         page.clean()
@@ -826,7 +831,6 @@ def main(page: ft.Page):
                         controllers_cache["calc_dp"] = DPView(page, user)
                     view_to_set = controllers_cache["calc_dp"]
                 elif key == "calc_repair":
-                    # Единый кэшируемый контроллер Калькулятора ремонта
                     if not controllers_cache["calc_repair"]:
                         controllers_cache["calc_repair"] = RepairRoomsCalculatorView()
                     view_to_set = controllers_cache["calc_repair"]

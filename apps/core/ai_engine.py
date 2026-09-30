@@ -19,6 +19,40 @@ os.makedirs(TEMP_DIR, exist_ok=True)
 MODEL_NAME = "gemini-3.6-flash"
 
 
+def format_gemini_error(status_code: int, error_text: str) -> str:
+    """Преобразует технические ответы Google API в понятный русский текст."""
+    raw_lower = (error_text or "").lower()
+
+    if "api key not valid" in raw_lower or "api_key_invalid" in raw_lower or "key has expired" in raw_lower:
+        return "Неверный или просроченный API-ключ Gemini. Проверьте ячейку M11 в листе 'Настройка' таблицы!"
+
+    if "user location is not supported" in raw_lower or "location is not supported" in raw_lower:
+        return "Доступ к Gemini заблокирован для региона РФ. Проверьте и включите Зарубежный туннель (VPN) в настройках!"
+
+    if status_code == 429 or "resource_exhausted" in raw_lower or "quota" in raw_lower:
+        return "Исчерпан лимит запросов к Gemini (лимит квоты/RPM). Подождите 1–2 минуты или замените API-ключ."
+
+    if status_code == 503 or "unavailable" in raw_lower or "high demand" in raw_lower:
+        return "Сервера Google Gemini временно перегружены запросами (код 503). Попробуйте повторить анализ через 30–60 секунд."
+
+    if status_code in (500, 502, 504):
+        return f"Временный технический сбой на стороне серверов Google (код {status_code}). Попробуйте позже."
+
+    if "context window" in raw_lower or "too large" in raw_lower or "request payload size" in raw_lower or status_code == 413:
+        return "Аудиофайл слишком длинный или превышен лимит контекста нейросети. Попробуйте разбить запись на части."
+
+    # Если в ответе есть стандартный JSON с полем message
+    try:
+        err_json = json.loads(error_text)
+        if isinstance(err_json, dict) and "error" in err_json and "message" in err_json["error"]:
+            msg = err_json["error"]["message"]
+            return f"Сбой Google API ({status_code}): {msg}"
+    except Exception:
+        pass
+
+    return f"Сбой сервиса Gemini ({status_code}): {error_text[:250]}"
+
+
 def get_bundle_dir() -> str:
     """Возвращает базовую директорию сборки или проекта."""
     if getattr(sys, "frozen", False):
@@ -264,31 +298,39 @@ def _post_gemini_request(payload: dict, progress_callback=None, step_label: str 
     last_resp = None
     last_err = None
 
+    max_attempts = 5
+    backoff_delays = [3, 6, 12, 20, 30]
+
     for key_or_none in candidates:
-        for attempt in range(3):
+        for attempt in range(max_attempts):
+            delay = backoff_delays[min(attempt, len(backoff_delays) - 1)]
             try:
                 if key_or_none:
                     if progress_callback:
-                        progress_callback(f"{step_label} через туннель (попытка {attempt + 1})...")
+                        progress_callback(f"{step_label} через туннель (попытка {attempt + 1}/{max_attempts})...")
                     with OnDemandTunnel(key_or_none, local_http_port=20820) as proxy_url:
                         proxies = {"http": proxy_url, "https": proxy_url}
-                        resp = requests.post(url, headers=headers, json=payload, timeout=160, proxies=proxies)
+                        resp = requests.post(url, headers=headers, json=payload, timeout=180, proxies=proxies)
                 else:
                     if progress_callback:
-                        progress_callback(f"{step_label} напрямую (попытка {attempt + 1})...")
-                    resp = requests.post(url, headers=headers, json=payload, timeout=160)
+                        progress_callback(f"{step_label} напрямую (попытка {attempt + 1}/{max_attempts})...")
+                    resp = requests.post(url, headers=headers, json=payload, timeout=180)
 
                 if resp.status_code == 200:
                     last_resp = resp
                     break
 
-                if resp.status_code == 503:
+                # Временные сбои и перегрузки: повторяем запрос
+                if resp.status_code in (503, 429, 500, 502, 504):
                     last_resp = resp
                     last_err = resp.text
-                    time.sleep(3)
+                    if progress_callback:
+                        progress_callback(f"Google перегружен ({resp.status_code}). Повтор через {delay} сек...")
+                    time.sleep(delay)
                     continue
 
                 if resp.status_code == 400 and "User location is not supported" in resp.text:
+                    last_resp = resp
                     last_err = resp.text
                     break
 
@@ -297,14 +339,19 @@ def _post_gemini_request(payload: dict, progress_callback=None, step_label: str 
                 break
             except Exception as ex:
                 last_err = str(ex)
-                break
+                if progress_callback and attempt < max_attempts - 1:
+                    progress_callback(f"Сбой связи: {ex}. Пауза {delay} сек...")
+                time.sleep(delay)
+                continue
 
         if last_resp and last_resp.status_code == 200:
             break
 
     if not last_resp or last_resp.status_code != 200:
-        err_detail = last_resp.text if last_resp else str(last_err)
-        raise Exception(f"Ошибка Gemini API: {err_detail}")
+        status_code = last_resp.status_code if last_resp else 0
+        raw_text = last_resp.text if last_resp else str(last_err)
+        human_error = format_gemini_error(status_code, raw_text)
+        raise Exception(human_error)
 
     return last_resp.json()
 
@@ -312,7 +359,7 @@ def _post_gemini_request(payload: dict, progress_callback=None, step_label: str 
 def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callback=None) -> dict:
     """
     Двухэтапная обработка записи любой длины:
-    1. Гарантированный аналитический разбор РОПа и Саммари (не обрезается лимитом).
+    1. Аналитический разбор РОПа и Саммари.
     2. Дословная транскрипция с таймкодами.
     """
     key = get_current_gemini_key()
@@ -369,7 +416,6 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
     summary = ""
     full_report = ""
 
-    # Извлечение Саммари и Отчета с защитой регулярными выражениями
     sum_match = re.search(r"---КРАТКОЕ САММАРИ---(.*?)(?=---ОТЧЕТ ИИ---|$)", text_analysis, re.DOTALL | re.IGNORECASE)
     rep_match = re.search(r"---ОТЧЕТ ИИ---(.*)", text_analysis, re.DOTALL | re.IGNORECASE)
 
