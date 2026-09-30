@@ -202,8 +202,16 @@ def main(page: ft.Page):
 
         def do_restart(e):
             btn_action.disabled = True
+            btn_cancel.disabled = True
             status_lbl.value = "Перезапуск приложения..."
             page.update()
+            
+            # Аккуратно закрываем графическое окно до завершения программы
+            try:
+                page.window.destroy()
+            except Exception:
+                pass
+
             apply_update_and_restart()
 
         def do_update(e):

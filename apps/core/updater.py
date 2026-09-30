@@ -6,7 +6,7 @@ import threading
 import requests
 import re
 
-CURRENT_VERSION = "1.1.9"
+CURRENT_VERSION = "1.1.8"
 GITHUB_REPO = "madweey/REapps"
 API_LATEST_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
@@ -17,7 +17,7 @@ HEADERS = {
 
 
 def parse_version(ver_str: str) -> tuple:
-    """Извлекает только числа из любой строки версии (v.1.1.8 -> (1, 1, 8))."""
+    """Извлекает только числа из любой строки версии (v.1.1.9 -> (1, 1, 9))."""
     nums = re.findall(r"\d+", ver_str)
     return tuple(map(int, nums)) if nums else (0, 0, 0)
 
@@ -32,7 +32,7 @@ def check_for_updates() -> dict | None:
     download_url = None
     body_text = ""
 
-    # Способ 1: Прямой запрос к GitHub API
+    # 1. Прямой запрос к GitHub API
     try:
         print(f"[Updater] Запрос к API: {API_LATEST_URL}")
         resp = requests.get(API_LATEST_URL, headers=HEADERS, timeout=8)
@@ -43,7 +43,6 @@ def check_for_updates() -> dict | None:
             remote_tag = data.get("tag_name", "").strip()
             body_text = data.get("body", "")
 
-            # Поиск прямой ссылки на REapps.exe в assets
             for asset in data.get("assets", []):
                 if asset.get("name", "").lower() == "reapps.exe":
                     download_url = asset.get("browser_download_url")
@@ -53,7 +52,7 @@ def check_for_updates() -> dict | None:
     except Exception as e:
         print(f"[Updater] Ошибка API запроса: {e}")
 
-    # Способ 2 (Резервный): Определение тега через веб-редирект
+    # 2. Резервный запрос через веб-редирект
     if not remote_tag:
         try:
             web_url = f"https://github.com/{GITHUB_REPO}/releases/latest"
@@ -96,7 +95,7 @@ def check_for_updates() -> dict | None:
 
 
 def download_update_file(download_url: str, on_progress=None, on_success=None, on_error=None):
-    """Скачивает бинарник обновления во временный каталог с проверкой размера."""
+    """Скачивает бинарник обновления во временный каталог с проверкой целостности."""
     def _worker():
         try:
             if not getattr(sys, "frozen", False):
@@ -145,85 +144,65 @@ def download_update_file(download_url: str, on_progress=None, on_success=None, o
 
 def apply_update_and_restart():
     """
-    Заменяет текущий .exe новым через PowerShell и перезапускает программу
-    с корректным ожиданием освобождения файловых блокировок и DLL.
+    Создаёт автономный bat-скрипт обновления, полностью отвязывает его от текущего процесса
+    и даёт приложению корректно и мягко завершиться для очистки папки Temp.
     """
     try:
         current_exe = os.path.abspath(sys.executable)
         current_dir = os.path.dirname(current_exe)
-        current_exe_name = os.path.basename(current_exe)
         temp_dir = tempfile.gettempdir()
         new_exe = os.path.join(temp_dir, "REapps_new.exe")
-        log_file = os.path.join(temp_dir, "reapps_update.log")
-        ps_script = os.path.join(temp_dir, "reapps_updater.ps1")
+        updater_bat = os.path.join(temp_dir, "reapps_runner.bat")
         pid = os.getpid()
 
-        ps_content = f"""
-$ErrorActionPreference = "Continue"
-$log = "{log_file}"
+        # Создаём пакетный файл, который ждёт закрытия процесса, не блокируя удаление временных файлов PyInstaller
+        bat_content = f"""@echo off
+chcp 65001 >nul
+timeout /t 2 /nobreak >nul
 
-function Log($msg) {{
-    $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    "[$time] $msg" | Out-File -FilePath $log -Append -Encoding utf8
-}}
+:WAIT_LOOP
+tasklist /fi "PID eq {pid}" | findstr /i "{pid}" >nul
+if not errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    goto WAIT_LOOP
+)
 
-Log "Запуск процедуры обновления. Текущий PID: {pid}"
-Log "Целевой путь: '{current_exe}'"
+:: Пауза для полной выгрузки дескрипторов библиотек
+timeout /t 2 /nobreak >nul
 
-# Ожидание завершения исходного процесса
-$attempts = 0
-while ((Get-Process -Id {pid} -ErrorAction SilentlyContinue) -and ($attempts -lt 40)) {{
-    Start-Sleep -Milliseconds 250
-    $attempts++
-}}
+:COPY_LOOP
+copy /y "{new_exe}" "{current_exe}" >nul 2>&1
+if errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    goto COPY_LOOP
+)
 
-taskkill /F /PID {pid} /T 2>$null
-taskkill /F /IM "{current_exe_name}" /T 2>$null
-taskkill /F /IM "REapps.exe" /T 2>$null
+del /f /q "{new_exe}" >nul 2>&1
 
-# Пауза для полной выгрузки DLL из памяти и снятия файловых блокировок Windows
-Start-Sleep -Seconds 3
+:: Запуск обновленного приложения
+cd /d "{current_dir}"
+start "" "{current_exe}"
 
-$copySuccess = $false
-for ($i = 0; $i -lt 40; $i++) {{
-    try {{
-        Copy-Item -Path '{new_exe}' -Destination '{current_exe}' -Force -ErrorAction Stop
-        $copySuccess = $true
-        Log "Файл успешно скопирован на попытке $i"
-        break
-    }} catch {{
-        Log "Попытка замены $i: $_"
-        Start-Sleep -Milliseconds 600
-    }}
-}}
-
-if ($copySuccess) {{
-    Remove-Item -Path '{new_exe}' -Force -ErrorAction SilentlyContinue
-    
-    # Дополнительная пауза перед запуском для корректной распаковки PyInstaller
-    Start-Sleep -Seconds 2
-    
-    Set-Location -Path '{current_dir}'
-    Start-Process -FilePath '{current_exe}' -WorkingDirectory '{current_dir}'
-    Log "Приложение успешно перезапущено."
-}} else {{
-    Log "Критический сбой: не удалось скопировать обновленный файл."
-}}
-
-Start-Sleep -Seconds 2
-Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+:: Самоудаление батника
+del "%~f0" >nul 2>&1
+exit
 """
-        with open(ps_script, "w", encoding="utf-8-sig") as f:
-            f.write(ps_content)
+        with open(updater_bat, "w", encoding="cp1251", errors="ignore") as f:
+            f.write(bat_content)
 
-        cmd = f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps_script}"'
+        # Флаги для полного отрыва внешнего процесса от родительского
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = 0x08000000
+
         subprocess.Popen(
-            cmd,
-            shell=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            ["cmd.exe", "/c", updater_bat],
+            creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+            close_fds=True,
+            shell=False
         )
 
-        os._exit(0)
+        # Мягкое завершение текущего приложения
+        sys.exit(0)
     except Exception as e:
         print(f"[Updater] Сбой перезапуска: {e}")
-        os._exit(1)
+        sys.exit(1)
