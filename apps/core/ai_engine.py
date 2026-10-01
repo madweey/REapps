@@ -10,7 +10,7 @@ import subprocess
 import requests
 
 from apps.core.vpn_manager import load_tunnel_states, OnDemandTunnel
-from apps.core.sheets import get_split_vpn_keys, get_gemini_api_key_from_sheet
+from apps.core.sheets import get_split_vpn_keys, get_gemini_api_keys_from_sheet
 
 BASE_APPDATA = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "REapps")
 TEMP_DIR = os.path.join(BASE_APPDATA, "temp_audio")
@@ -20,17 +20,27 @@ MODEL_NAME = "gemini-3.6-flash"
 
 
 def format_gemini_error(status_code: int, error_text: str) -> str:
-    """Преобразует технические ответы Google API в понятный русский текст."""
+    """Преобразует технические ответы Google API в понятный текст с сохранением деталей."""
     raw_lower = (error_text or "").lower()
 
     if "api key not valid" in raw_lower or "api_key_invalid" in raw_lower or "key has expired" in raw_lower:
-        return "Неверный или просроченный API-ключ Gemini. Проверьте ячейку M11 в листе 'Настройка' таблицы!"
+        return "Неверный или просроченный API-ключ Gemini. Проверьте диапазон M11:M13 в листе 'Настройка' таблицы!"
 
     if "user location is not supported" in raw_lower or "location is not supported" in raw_lower:
         return "Доступ к Gemini заблокирован для региона РФ. Проверьте и включите Зарубежный туннель (VPN) в настройках!"
 
+    detailed_msg = ""
+    try:
+        err_json = json.loads(error_text)
+        if isinstance(err_json, dict) and "error" in err_json:
+            detailed_msg = err_json["error"].get("message", "")
+    except Exception:
+        detailed_msg = error_text.strip()
+
     if status_code == 429 or "resource_exhausted" in raw_lower or "quota" in raw_lower:
-        return "Исчерпан лимит запросов к Gemini (лимит квоты/RPM). Подождите 1–2 минуты или замените API-ключ."
+        if detailed_msg:
+            return f"Исчерпана квота на всех доступных ключах (429): {detailed_msg}"
+        return "Исчерпан лимит запросов на всех доступных ключах. Добавьте свежие ключи в M11:M13."
 
     if status_code == 503 or "unavailable" in raw_lower or "high demand" in raw_lower:
         return "Сервера Google Gemini временно перегружены запросами (код 503). Попробуйте повторить анализ через 30–60 секунд."
@@ -41,16 +51,10 @@ def format_gemini_error(status_code: int, error_text: str) -> str:
     if "context window" in raw_lower or "too large" in raw_lower or "request payload size" in raw_lower or status_code == 413:
         return "Аудиофайл слишком длинный или превышен лимит контекста нейросети. Попробуйте разбить запись на части."
 
-    # Если в ответе есть стандартный JSON с полем message
-    try:
-        err_json = json.loads(error_text)
-        if isinstance(err_json, dict) and "error" in err_json and "message" in err_json["error"]:
-            msg = err_json["error"]["message"]
-            return f"Сбой Google API ({status_code}): {msg}"
-    except Exception:
-        pass
+    if detailed_msg:
+        return f"Сбой Google API ({status_code}): {detailed_msg}"
 
-    return f"Сбой сервиса Gemini ({status_code}): {error_text[:250]}"
+    return f"Сбой сервиса Gemini ({status_code}): {error_text[:350]}"
 
 
 def get_bundle_dir() -> str:
@@ -61,14 +65,7 @@ def get_bundle_dir() -> str:
 
 
 def get_binary_path(binary_name: str) -> str:
-    """
-    Глубокий поиск бинарника (ffmpeg.exe):
-    1. _MEIPASS (при PyInstaller onefile)
-    2. Рядом с .exe / в корне проекта
-    3. В подпапках bin/, ffmpeg/, ffmpeg/bin/
-    4. В LocalAppData / Roaming
-    5. Системный PATH через shutil.which
-    """
+    """Глубокий поиск бинарника (ffmpeg.exe)."""
     exe_name = f"{binary_name}.exe" if sys.platform == "win32" and not binary_name.endswith(".exe") else binary_name
 
     candidate_dirs = []
@@ -113,7 +110,6 @@ def get_binary_path(binary_name: str) -> str:
             if os.path.exists(target):
                 return os.path.abspath(target)
 
-    # Проверка через системный PATH
     sys_path_find = shutil.which(binary_name) or shutil.which(exe_name)
     if sys_path_find:
         return sys_path_find
@@ -121,16 +117,13 @@ def get_binary_path(binary_name: str) -> str:
     return binary_name
 
 
-def get_current_gemini_key() -> str:
-    api_key = get_gemini_api_key_from_sheet()
-    if not api_key:
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-    return api_key.strip()
-
-
-def get_gemini_url(model: str) -> str:
-    key = get_current_gemini_key()
-    return f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+def get_all_gemini_keys() -> list[str]:
+    """Возвращает список всех доступных ключей Gemini из таблицы или окружения."""
+    keys = get_gemini_api_keys_from_sheet()
+    env_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if env_key and env_key not in keys:
+        keys.append(env_key)
+    return keys
 
 
 def get_yandex_disk_direct_download_url(public_url: str) -> str:
@@ -205,7 +198,7 @@ def extract_audio_with_ffmpeg(input_path: str, progress_callback=None) -> str:
     output_path = os.path.join(TEMP_DIR, output_filename)
 
     if progress_callback:
-        progress_callback("Сжатие звука через ffmpeg...")
+        progress_callback("Оптимизация звука для анализа...")
 
     ffmpeg_bin = get_binary_path("ffmpeg")
 
@@ -216,7 +209,7 @@ def extract_audio_with_ffmpeg(input_path: str, progress_callback=None) -> str:
         output_path
     ]
 
-    creationflags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
+    creationflags = 0x08000000 if sys.platform == "win32" else 0
     try:
         subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, creationflags=creationflags)
         return output_path
@@ -227,9 +220,6 @@ def extract_audio_with_ffmpeg(input_path: str, progress_callback=None) -> str:
 
 
 def extract_audio_to_folder(source_type: str, source_val: str, output_folder: str, custom_name: str = "", progress_callback=None) -> str:
-    """
-    Извлекает чистое аудио (MP3 192k) из видео (файла или ссылки) в указанную пользователем папку.
-    """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder, exist_ok=True)
 
@@ -284,92 +274,102 @@ def extract_audio_to_folder(source_type: str, source_val: str, output_folder: st
 
 
 def _post_gemini_request(payload: dict, progress_callback=None, step_label: str = "") -> dict:
-    url = get_gemini_url(MODEL_NAME)
+    available_keys = get_all_gemini_keys()
+    if not available_keys:
+        raise Exception("Не найден ни один API-ключ Gemini в листе 'Настройка' (диапазон M11:M13)!")
+
     headers = {"Content-Type": "application/json"}
 
     _, enable_foreign = load_tunnel_states()
     _, foreign_keys = get_split_vpn_keys()
 
-    candidates = []
+    vpn_candidates = []
     if enable_foreign and foreign_keys:
-        candidates = foreign_keys.copy()
-    candidates.append(None)
+        vpn_candidates = foreign_keys.copy()
+    vpn_candidates.append(None)
 
     last_resp = None
     last_err = None
 
-    max_attempts = 5
-    backoff_delays = [3, 6, 12, 20, 30]
+    # Внешний цикл: автоматическая ротация ключей при исчерпании квоты (429)
+    for key_idx, current_api_key in enumerate(available_keys, start=1):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={current_api_key}"
+        quota_exceeded = False
 
-    for key_or_none in candidates:
-        for attempt in range(max_attempts):
-            delay = backoff_delays[min(attempt, len(backoff_delays) - 1)]
-            try:
-                if key_or_none:
-                    if progress_callback:
-                        progress_callback(f"{step_label} через туннель (попытка {attempt + 1}/{max_attempts})...")
-                    with OnDemandTunnel(key_or_none, local_http_port=20820) as proxy_url:
-                        proxies = {"http": proxy_url, "https": proxy_url}
-                        resp = requests.post(url, headers=headers, json=payload, timeout=180, proxies=proxies)
-                else:
-                    if progress_callback:
-                        progress_callback(f"{step_label} напрямую (попытка {attempt + 1}/{max_attempts})...")
-                    resp = requests.post(url, headers=headers, json=payload, timeout=180)
+        for vpn_key in vpn_candidates:
+            if quota_exceeded:
+                break
 
-                if resp.status_code == 200:
-                    last_resp = resp
-                    break
+            max_attempts = 2
+            backoff_delays = [2, 4]
 
-                # Временные сбои и перегрузки: повторяем запрос
-                if resp.status_code in (503, 429, 500, 502, 504):
+            for attempt in range(max_attempts):
+                delay = backoff_delays[min(attempt, len(backoff_delays) - 1)]
+                try:
+                    status_text = f"{step_label} [Ключ #{key_idx}/{len(available_keys)}]"
+                    if vpn_key:
+                        if progress_callback:
+                            progress_callback(f"{status_text} через туннель...")
+                        with OnDemandTunnel(vpn_key, local_http_port=20820) as proxy_url:
+                            proxies = {"http": proxy_url, "https": proxy_url}
+                            resp = requests.post(url, headers=headers, json=payload, timeout=180, proxies=proxies)
+                    else:
+                        if progress_callback:
+                            progress_callback(f"{status_text} напрямую...")
+                        resp = requests.post(url, headers=headers, json=payload, timeout=180)
+
+                    if resp.status_code == 200:
+                        return resp.json()
+
+                    # Проверяем, исчерпан ли лимит именно этого ключа
+                    raw_lower = (resp.text or "").lower()
+                    if resp.status_code == 429 or "resource_exhausted" in raw_lower or "quota" in raw_lower:
+                        last_resp = resp
+                        last_err = resp.text
+                        quota_exceeded = True
+                        if key_idx < len(available_keys):
+                            if progress_callback:
+                                progress_callback(f"Лимит ключа #{key_idx} исчерпан. Переключаюсь на ключ #{key_idx + 1}...")
+                            time.sleep(1)
+                        break
+
+                    # Временные перегрузки серверов (503, 500, 502, 504)
+                    if resp.status_code in (503, 500, 502, 504):
+                        last_resp = resp
+                        last_err = resp.text
+                        if progress_callback:
+                            progress_callback(f"Google перегружен ({resp.status_code}). Повтор через {delay} сек...")
+                        time.sleep(delay)
+                        continue
+
                     last_resp = resp
                     last_err = resp.text
-                    if progress_callback:
-                        progress_callback(f"Google перегружен ({resp.status_code}). Повтор через {delay} сек...")
+                    break
+                except Exception as ex:
+                    last_err = str(ex)
+                    if progress_callback and attempt < max_attempts - 1:
+                        progress_callback(f"Сбой связи: {ex}. Пауза {delay} сек...")
                     time.sleep(delay)
                     continue
 
-                if resp.status_code == 400 and "User location is not supported" in resp.text:
-                    last_resp = resp
-                    last_err = resp.text
-                    break
-
-                last_resp = resp
-                last_err = resp.text
-                break
-            except Exception as ex:
-                last_err = str(ex)
-                if progress_callback and attempt < max_attempts - 1:
-                    progress_callback(f"Сбой связи: {ex}. Пауза {delay} сек...")
-                time.sleep(delay)
-                continue
-
-        if last_resp and last_resp.status_code == 200:
-            break
-
-    if not last_resp or last_resp.status_code != 200:
-        status_code = last_resp.status_code if last_resp else 0
-        raw_text = last_resp.text if last_resp else str(last_err)
-        human_error = format_gemini_error(status_code, raw_text)
-        raise Exception(human_error)
-
-    return last_resp.json()
+    status_code = last_resp.status_code if last_resp else 0
+    raw_text = last_resp.text if last_resp else str(last_err)
+    human_error = format_gemini_error(status_code, raw_text)
+    raise Exception(human_error)
 
 
 def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callback=None) -> dict:
-    """
-    Двухэтапная обработка записи любой длины:
-    1. Аналитический разбор РОПа и Саммари.
-    2. Дословная транскрипция с таймкодами.
-    """
-    key = get_current_gemini_key()
-    if not key:
-        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11/M12)!")
+    actual_audio_path = audio_path
+    if os.path.exists(audio_path) and os.path.getsize(audio_path) > 5 * 1024 * 1024:
+        try:
+            actual_audio_path = extract_audio_with_ffmpeg(audio_path, progress_callback)
+        except Exception:
+            actual_audio_path = audio_path
 
     if progress_callback:
         progress_callback("Подготовка аудио к анализу...")
 
-    ext = os.path.splitext(audio_path)[1].lower()
+    ext = os.path.splitext(actual_audio_path)[1].lower()
     mime_type_map = {
         ".mp3": "audio/mp3",
         ".wav": "audio/wav",
@@ -380,12 +380,12 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
     }
     mime_type = mime_type_map.get(ext, "audio/mp3")
 
-    with open(audio_path, "rb") as f:
+    with open(actual_audio_path, "rb") as f:
         audio_bytes = f.read()
 
     audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-    # ЭТАП 1: Анализ РОПа и Краткое Саммари (Приоритет №1)
+    # ЭТАП 1: Анализ РОПа и Краткое Саммари
     prompt_stage1 = (
         f"{prompt_text}\n\n"
         "ВАЖНО! Сформируй ответ строго по двум блокам с указанными заголовками:\n\n"
@@ -467,9 +467,9 @@ def analyze_audio_with_gemini(audio_path: str, prompt_text: str, progress_callba
 
 
 def analyze_batch_summaries_with_gemini(summaries: list[dict], meta_prompt: str) -> str:
-    key = get_current_gemini_key()
-    if not key:
-        raise Exception("Не найден API-ключ Gemini в листе 'Настройка' (ячейка M11/M12)!")
+    available_keys = get_all_gemini_keys()
+    if not available_keys:
+        raise Exception("Не найден ни один API-ключ Gemini в листе 'Настройка' (диапазон M11:M13)!")
 
     context_lines = []
     for idx, s in enumerate(summaries, start=1):

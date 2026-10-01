@@ -73,30 +73,41 @@ from apps.core.auth import (
     clear_session,
 )
 
-_CACHED_GEMINI_KEY = None
+_CACHED_GEMINI_KEYS: list[str] = []
 
 
 def get_sheet_by_title(title: str):
     return get_main_spreadsheet().worksheet(title)
 
 
-def get_gemini_api_key_from_sheet(force_refresh: bool = False) -> str:
-    """Загружает API-ключ Gemini из листа 'Настройка', ячейка M11."""
-    global _CACHED_GEMINI_KEY
-    if _CACHED_GEMINI_KEY and not force_refresh:
-        return _CACHED_GEMINI_KEY
+def get_gemini_api_keys_from_sheet(force_refresh: bool = False) -> list[str]:
+    """Загружает пул API-ключей Gemini из листа 'Настройка' (диапазон M11:M13)."""
+    global _CACHED_GEMINI_KEYS
+    if _CACHED_GEMINI_KEYS and not force_refresh:
+        return _CACHED_GEMINI_KEYS
 
+    keys = []
     try:
         ws = get_sheet_by_title("Настройка")
-        key_val = ws.acell("M11").value or ""
-        key_clean = key_val.strip()
-        if key_clean:
-            _CACHED_GEMINI_KEY = key_clean
-            return _CACHED_GEMINI_KEY
+        vals = ws.get_values("M11:M13")
+        for row in vals:
+            if row and row[0]:
+                k = row[0].strip()
+                if k and k not in keys:
+                    keys.append(k)
+        if keys:
+            _CACHED_GEMINI_KEYS = keys
+            return _CACHED_GEMINI_KEYS
     except Exception as e:
-        print(f"[Sheets] Ошибка чтения ключа Gemini из M11: {e}")
+        print(f"[Sheets] Ошибка чтения ключей Gemini из M11:M13: {e}")
 
-    return _CACHED_GEMINI_KEY or ""
+    return _CACHED_GEMINI_KEYS or []
+
+
+def get_gemini_api_key_from_sheet(force_refresh: bool = False) -> str:
+    """Для обратной совместимости: возвращает первый доступный ключ."""
+    keys = get_gemini_api_keys_from_sheet(force_refresh)
+    return keys[0] if keys else ""
 
 
 __all__ = [
@@ -107,6 +118,7 @@ __all__ = [
     "get_sheets_client",
     "get_sheet_by_title",
     "get_gemini_api_key_from_sheet",
+    "get_gemini_api_keys_from_sheet",
     "find_deal_by_link",
     "normalize_deal_url",
     "get_active_deals",
