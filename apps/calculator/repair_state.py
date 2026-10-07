@@ -11,11 +11,17 @@ class RepairState:
     # Финансовые показатели из калькулятора
     rate_eng: float = 22162.0
     total_eng: float = 1662150.0
-    rate_fin: float = 40931.0
-    total_fin: float = 3069825.0
-    grand_total: float = 4731975.0
+    rate_fin: float = 41405.0
+    total_fin: float = 3105375.0
+    grand_total: float = 4767525.0
     selected_type: str = "complex"
     spec_lines: list = []
+
+    # Новые параметры для комплексного ремонта
+    has_furniture: bool = False
+    furniture_cost: float = 0.0
+    has_appliances: bool = False
+    appliances_cost: float = 0.0
 
 
 current_repair_state = RepairState()

@@ -121,7 +121,7 @@ def get_menu_view(page, switch_view, app_state):
                                 title="Калькулятор и КП",
                                 subtitle="Расчет объекта, подбор ЖК и тарифов",
                                 icon=ft.Icons.CALCULATE_ROUNDED,
-                                on_click=lambda _: switch_view("calc"),
+                                on_click=lambda _: switch_view("calc_repair"),
                                 is_active=True,
                             ),
                             menu_card(
@@ -135,8 +135,8 @@ def get_menu_view(page, switch_view, app_state):
                                 title="Транскрибация",
                                 subtitle="Анализ звонков и протоколов",
                                 icon=ft.Icons.RECORD_VOICE_OVER_ROUNDED,
-                                tag="Скоро",
-                                is_active=False,
+                                on_click=lambda _: switch_view("transcription_single"),
+                                is_active=True,
                             ),
                             menu_card(
                                 title="Отчеты",

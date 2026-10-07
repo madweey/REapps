@@ -1,3 +1,7 @@
+import json
+import os
+import sys
+
 # Единый фасад обратной совместимости
 from apps.core.sheets_client import (
     get_main_spreadsheet,
@@ -39,7 +43,6 @@ from apps.core.misc_service import (
     save_split_vpn_keys,
 )
 
-# Безопасный импорт / определение update_prompt
 try:
     from apps.core.misc_service import update_prompt as _imported_update_prompt
     update_prompt = _imported_update_prompt
@@ -81,7 +84,6 @@ def get_sheet_by_title(title: str):
 
 
 def get_gemini_api_keys_from_sheet(force_refresh: bool = False) -> list[str]:
-    """Загружает пул API-ключей Gemini из листа 'Настройка' (диапазон M11:M13)."""
     global _CACHED_GEMINI_KEYS
     if _CACHED_GEMINI_KEYS and not force_refresh:
         return _CACHED_GEMINI_KEYS
@@ -99,15 +101,161 @@ def get_gemini_api_keys_from_sheet(force_refresh: bool = False) -> list[str]:
             _CACHED_GEMINI_KEYS = keys
             return _CACHED_GEMINI_KEYS
     except Exception as e:
-        print(f"[Sheets] Ошибка чтения ключей Gemini из M11:M13: {e}")
+        print(f"[Sheets] Ошибка чтения ключей Gemini: {e}")
 
     return _CACHED_GEMINI_KEYS or []
 
 
 def get_gemini_api_key_from_sheet(force_refresh: bool = False) -> str:
-    """Для обратной совместимости: возвращает первый доступный ключ."""
     keys = get_gemini_api_keys_from_sheet(force_refresh)
     return keys[0] if keys else ""
+
+
+# -------------------------------------------------------------------------
+# ЯДРО СИНХРОНИЗАЦИИ БАЗЫ РЕМОНТА (КОМБИНИРОВАННЫЙ ПОДХОД)
+# -------------------------------------------------------------------------
+
+def _parse_float(val, default=0.0):
+    if val is None or str(val).strip() == "": return default
+    s = str(val).strip().replace(" ", "").replace("%", "").replace(",", ".")
+    try: return float(s)
+    except ValueError: return default
+
+class RepairDataSync:
+    LOCAL_FILE = "repair_db.json"
+
+    @classmethod
+    def get_local_path(cls):
+        if getattr(sys, 'frozen', False):
+            base = os.path.dirname(sys.executable)
+        else:
+            base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        return os.path.join(base, cls.LOCAL_FILE)
+
+    @classmethod
+    def pull_from_cloud(cls):
+        sh = get_main_spreadsheet()
+        ws = sh.worksheet("Настройка_Ремонт")
+        all_vals = ws.get_all_values()
+        
+        data = {
+            "base_rates": {
+                "engineering_work": 22162.0, "finishing_work": 41405.0,
+                "engineering_mat": 29475.0, "finishing_mat": 26500.0,
+                "template_eng": "1oakVh-dtwWQGDCXSNQZc_Zs9tOjJtMoG5zZSKIAcabQ",
+                "template_fin": "17-2u5SqSYQBjSoR72X4qhlFAAdwhMz2dhVB1dmK3CFQ",
+                "template_complex": "1-0bwSourv-vwEeKupk0oReYUazj-L_-Q6l5PKWw0nkc",
+                "folder_id": "1kLOMyKkU9YLx5PfqUHUDfDhNR3x6xGhq"
+            },
+            "coefficients": [],
+            "eng_stages": [],
+            "fin_stages": []
+        }
+        
+        last_num = 0
+        current_stages = data["eng_stages"]
+
+        for r_idx in range(1, len(all_vals)):
+            row = all_vals[r_idx]
+            
+            # Базовые ставки и Настройки (Столбцы A-C)
+            if r_idx < 25 and len(row) > 1:
+                n = str(row[0]).lower()
+                v = str(row[1]).strip()
+                if "инж. рем" in n: data["base_rates"]["engineering_work"] = _parse_float(v, 22162.0)
+                elif "отдел. раб" in n: data["base_rates"]["finishing_work"] = _parse_float(v, 41405.0)
+                elif "материал инж" in n: data["base_rates"]["engineering_mat"] = _parse_float(v, 29475.0)
+                elif "материал отдел" in n: data["base_rates"]["finishing_mat"] = _parse_float(v, 26500.0)
+                elif "шаблон инж" in n: data["base_rates"]["template_eng"] = v
+                elif "шаблон отдел" in n: data["base_rates"]["template_fin"] = v
+                elif "шаблон компл" in n: data["base_rates"]["template_complex"] = v
+                elif "папка" in n: data["base_rates"]["folder_id"] = v
+
+            # Коэффициенты (Столбцы D-G)
+            if len(row) > 6:
+                c_id = str(row[3]).strip()
+                c_name = str(row[4]).strip()
+                c_val = _parse_float(row[5], 0.0)
+                c_type = str(row[6]).strip()
+                if c_id:
+                    data["coefficients"].append({
+                        "id": c_id, "name": c_name, "value": c_val, "type": c_type
+                    })
+
+            # Этапы ремонта (Столбцы L-R)
+            if len(row) > 17:
+                s_title = str(row[12]).strip()
+                if s_title:
+                    s_num_str = str(row[11]).strip()
+                    s_num = int(_parse_float(s_num_str, last_num + 1))
+                    if s_num <= last_num and len(data["eng_stages"]) > 0:
+                        current_stages = data["fin_stages"]
+                    last_num = s_num
+                    
+                    s_ws = _parse_float(row[13], 0.0)
+                    s_ms = _parse_float(row[14], 0.0)
+                    s_days = _parse_float(row[15], 10)
+                    s_wd = str(row[16]).strip()
+                    s_md = str(row[17]).strip()
+                    
+                    current_stages.append({
+                        "num": s_num, "title": s_title, "w_share": s_ws,
+                        "m_share": s_ms, "days": s_days, "w_desc": s_wd, "m_desc": s_md
+                    })
+        
+        with open(cls.get_local_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return data
+
+    @classmethod
+    def get_data(cls):
+        path = cls.get_local_path()
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return cls.pull_from_cloud()
+
+    @classmethod
+    def save_and_push(cls, data):
+        # 1. Сохраняем локально для мгновенной работы
+        with open(cls.get_local_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
+        # 2. Выгружаем батчем в Google Sheets
+        sh = get_main_spreadsheet()
+        ws = sh.worksheet("Настройка_Ремонт")
+        
+        rates_arr = [
+            ["Инж. рем за м2", data["base_rates"]["engineering_work"]],
+            ["Отдел. раб за м2", data["base_rates"]["finishing_work"]],
+            ["Материал инженерия", data["base_rates"]["engineering_mat"]],
+            ["Материал отделка", data["base_rates"]["finishing_mat"]],
+            ["Шаблон Инженерия", data["base_rates"]["template_eng"]],
+            ["Шаблон Отделка", data["base_rates"]["template_fin"]],
+            ["Шаблон Комплекс", data["base_rates"]["template_complex"]],
+            ["Папка сохранения", data["base_rates"]["folder_id"]],
+        ]
+        
+        coeffs_arr = []
+        for c in data["coefficients"]:
+            coeffs_arr.append([c["id"], c["name"], c["value"], c["type"]])
+        
+        stages_arr = []
+        for s in data["eng_stages"]:
+            stages_arr.append([s["num"], s["title"], s["w_share"], s["m_share"], s["days"], s["w_desc"], s["m_desc"]])
+        for s in data["fin_stages"]:
+            stages_arr.append([s["num"], s["title"], s["w_share"], s["m_share"], s["days"], s["w_desc"], s["m_desc"]])
+
+        # Очищаем старые диапазоны и записываем новые без смещения ячеек
+        ws.batch_clear(["A2:B30", "D2:G500", "L2:R500"])
+        if rates_arr: ws.update("A2", rates_arr)
+        if coeffs_arr: ws.update("D2", coeffs_arr)
+        if stages_arr: ws.update("L2", stages_arr)
+        
+        return True
 
 
 __all__ = [
@@ -119,6 +267,7 @@ __all__ = [
     "get_sheet_by_title",
     "get_gemini_api_key_from_sheet",
     "get_gemini_api_keys_from_sheet",
+    "RepairDataSync",
     "find_deal_by_link",
     "normalize_deal_url",
     "get_active_deals",
