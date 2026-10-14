@@ -3,7 +3,6 @@ import flet as ft
 from apps.core.sheets import get_all_meetings
 from apps.meetings.meetings_common import parse_date_safely, MeetingsModalManager
 
-
 class MeetingsRegistryView:
     def __init__(self, page: ft.Page, account_names: list[str], modal_mgr: MeetingsModalManager):
         self.page = page
@@ -136,8 +135,8 @@ class MeetingsRegistryView:
                     self.reg_status_filter,
                     self.reg_host_filter,
                     self.reg_creator_filter,
-                    ft.ElevatedButton("Фильтр", icon=ft.icons.FILTER_ALT_OUTLINED, bgcolor="#0C66E4", color=ft.colors.WHITE, height=48, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=14)), on_click=lambda e: setattr(self.registry_mode, "all_time", False) or self.load_registry_list()),
-                    ft.OutlinedButton("Все встречи", icon=ft.icons.ALL_INCLUSIVE_ROUNDED, height=48, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=14)), on_click=lambda e: setattr(self.registry_mode, "all_time", True) or self.load_registry_list()),
+                    ft.ElevatedButton("Фильтр", icon=ft.icons.FILTER_ALT_OUTLINED, bgcolor="#0C66E4", color=ft.colors.WHITE, height=48, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=14)), on_click=lambda e: (self.registry_mode.update({"all_time": False}), self.load_registry_list())),
+                    ft.OutlinedButton("Все встречи", icon=ft.icons.ALL_INCLUSIVE_ROUNDED, height=48, style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=14)), on_click=lambda e: (self.registry_mode.update({"all_time": True}), self.load_registry_list())),
                 ],
                 wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=10,
             ),

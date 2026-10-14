@@ -91,7 +91,8 @@ def get_gemini_api_keys_from_sheet(force_refresh: bool = False) -> list[str]:
     keys = []
     try:
         ws = get_sheet_by_title("Настройка")
-        vals = ws.get_values("M11:M13")
+        # Расширенный диапазон M11:M30 (до 20 ключей Gemini)
+        vals = ws.get_values("M11:M30")
         for row in vals:
             if row and row[0]:
                 k = row[0].strip()
@@ -133,19 +134,46 @@ class RepairDataSync:
         return os.path.join(base, cls.LOCAL_FILE)
 
     @classmethod
+    def save_local_only(cls, data):
+        with open(cls.get_local_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    @classmethod
     def pull_from_cloud(cls):
         sh = get_main_spreadsheet()
         ws = sh.worksheet("Настройка_Ремонт")
         all_vals = ws.get_all_values()
         
+        # Подгружаем текущие локальные данные, чтобы не потерять настройки, если в таблице пусто
+        existing_rates = {}
+        local_path = cls.get_local_path()
+        if os.path.exists(local_path):
+            try:
+                with open(local_path, "r", encoding="utf-8") as f:
+                    existing_rates = json.load(f).get("base_rates", {})
+            except Exception:
+                pass
+
         data = {
             "base_rates": {
-                "engineering_work": 22162.0, "finishing_work": 41405.0,
-                "engineering_mat": 29475.0, "finishing_mat": 26500.0,
-                "template_eng": "1oakVh-dtwWQGDCXSNQZc_Zs9tOjJtMoG5zZSKIAcabQ",
-                "template_fin": "17-2u5SqSYQBjSoR72X4qhlFAAdwhMz2dhVB1dmK3CFQ",
-                "template_complex": "1-0bwSourv-vwEeKupk0oReYUazj-L_-Q6l5PKWw0nkc",
-                "folder_id": "1kLOMyKkU9YLx5PfqUHUDfDhNR3x6xGhq"
+                "engineering_work": existing_rates.get("engineering_work", 25254.0),
+                "finishing_work": existing_rates.get("finishing_work", 33024.0),
+                "engineering_mat": existing_rates.get("engineering_mat", 29475.0),
+                "finishing_mat": existing_rates.get("finishing_mat", 26500.0),
+                "eng_mat_pct": existing_rates.get("eng_mat_pct", 85.0),
+                "fin_mat_pct": existing_rates.get("fin_mat_pct", 120.0),
+                "furn_market": existing_rates.get("furn_market", 20.0),
+                "furn_aggr": existing_rates.get("furn_aggr", 25.0),
+                "furn_custom": existing_rates.get("furn_custom", 35.0),
+                "app_base": existing_rates.get("app_base", 10.0),
+                "app_mid": existing_rates.get("app_mid", 15.0),
+                "app_prem": existing_rates.get("app_prem", 25.0),
+                "template_eng": existing_rates.get("template_eng", "1oakVh-dtwWQGDCXSNQZc_Zs9tOjJtMoG5zZSKIAcabQ"),
+                "template_fin": existing_rates.get("template_fin", "17-2u5SqSYQBjSoR72X4qhlFAAdwhMz2dhVB1dmK3CFQ"),
+                "template_complex": existing_rates.get("template_complex", "1-0bwSourv-vwEeKupk0oReYUazj-L_-Q6l5PKWw0nkc"),
+                "template_whitebox": existing_rates.get("template_whitebox", ""),
+                "folder_id": existing_rates.get("folder_id", "1kLOMyKkU9YLx5PfqUHUDfDhNR3x6xGhq"),
+                "custom_templates": []
             },
             "coefficients": [],
             "eng_stages": [],
@@ -158,18 +186,31 @@ class RepairDataSync:
         for r_idx in range(1, len(all_vals)):
             row = all_vals[r_idx]
             
-            # Базовые ставки и Настройки (Столбцы A-C)
-            if r_idx < 25 and len(row) > 1:
-                n = str(row[0]).lower()
+            # Базовые ставки, проценты и Шаблоны (Столбцы A-B)
+            if r_idx < 60 and len(row) > 1:
+                raw_name = str(row[0]).strip()
+                n = raw_name.lower()
                 v = str(row[1]).strip()
-                if "инж. рем" in n: data["base_rates"]["engineering_work"] = _parse_float(v, 22162.0)
-                elif "отдел. раб" in n: data["base_rates"]["finishing_work"] = _parse_float(v, 41405.0)
-                elif "материал инж" in n: data["base_rates"]["engineering_mat"] = _parse_float(v, 29475.0)
-                elif "материал отдел" in n: data["base_rates"]["finishing_mat"] = _parse_float(v, 26500.0)
-                elif "шаблон инж" in n: data["base_rates"]["template_eng"] = v
-                elif "шаблон отдел" in n: data["base_rates"]["template_fin"] = v
-                elif "шаблон компл" in n: data["base_rates"]["template_complex"] = v
-                elif "папка" in n: data["base_rates"]["folder_id"] = v
+                if raw_name:
+                    if "инж. рем" in n: data["base_rates"]["engineering_work"] = _parse_float(v, 25254.0)
+                    elif "отдел. раб" in n: data["base_rates"]["finishing_work"] = _parse_float(v, 33024.0)
+                    elif "материал инж (%)" in n or "инженерия (материалы %)" in n: data["base_rates"]["eng_mat_pct"] = _parse_float(v, 85.0)
+                    elif "материал отдел (%)" in n or "отделка (материалы %)" in n: data["base_rates"]["fin_mat_pct"] = _parse_float(v, 120.0)
+                    elif "материал инж" in n: data["base_rates"]["engineering_mat"] = _parse_float(v, 29475.0)
+                    elif "материал отдел" in n: data["base_rates"]["finishing_mat"] = _parse_float(v, 26500.0)
+                    elif "мебель: маркетплейс" in n: data["base_rates"]["furn_market"] = _parse_float(v, 20.0)
+                    elif "мебель: агрегаторы" in n: data["base_rates"]["furn_aggr"] = _parse_float(v, 25.0)
+                    elif "мебель: индив" in n: data["base_rates"]["furn_custom"] = _parse_float(v, 35.0)
+                    elif "техника: базовая" in n: data["base_rates"]["app_base"] = _parse_float(v, 10.0)
+                    elif "техника: средняя" in n: data["base_rates"]["app_mid"] = _parse_float(v, 15.0)
+                    elif "техника: премиум" in n: data["base_rates"]["app_prem"] = _parse_float(v, 25.0)
+                    elif "шаблон инж" in n: data["base_rates"]["template_eng"] = v
+                    elif "шаблон отдел" in n: data["base_rates"]["template_fin"] = v
+                    elif "шаблон компл" in n: data["base_rates"]["template_complex"] = v
+                    elif "шаблон вайтбокс" in n: data["base_rates"]["template_whitebox"] = v
+                    elif "папка" in n: data["base_rates"]["folder_id"] = v
+                    elif n.startswith("шаблон"):
+                        data["base_rates"]["custom_templates"].append({"name": raw_name, "id": v})
 
             # Коэффициенты (Столбцы D-G)
             if len(row) > 6:
@@ -203,8 +244,7 @@ class RepairDataSync:
                         "m_share": s_ms, "days": s_days, "w_desc": s_wd, "m_desc": s_md
                     })
         
-        with open(cls.get_local_path(), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        cls.save_local_only(data)
         return data
 
     @classmethod
@@ -213,7 +253,10 @@ class RepairDataSync:
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    d = json.load(f)
+                    if "custom_templates" not in d.get("base_rates", {}):
+                        d.setdefault("base_rates", {})["custom_templates"] = []
+                    return d
             except Exception:
                 pass
         return cls.pull_from_cloud()
@@ -221,36 +264,54 @@ class RepairDataSync:
     @classmethod
     def save_and_push(cls, data):
         # 1. Сохраняем локально для мгновенной работы
-        with open(cls.get_local_path(), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        cls.save_local_only(data)
             
         # 2. Выгружаем батчем в Google Sheets
         sh = get_main_spreadsheet()
         ws = sh.worksheet("Настройка_Ремонт")
+        br = data.get("base_rates", {})
         
         rates_arr = [
-            ["Инж. рем за м2", data["base_rates"]["engineering_work"]],
-            ["Отдел. раб за м2", data["base_rates"]["finishing_work"]],
-            ["Материал инженерия", data["base_rates"]["engineering_mat"]],
-            ["Материал отделка", data["base_rates"]["finishing_mat"]],
-            ["Шаблон Инженерия", data["base_rates"]["template_eng"]],
-            ["Шаблон Отделка", data["base_rates"]["template_fin"]],
-            ["Шаблон Комплекс", data["base_rates"]["template_complex"]],
-            ["Папка сохранения", data["base_rates"]["folder_id"]],
+            ["Инж. рем за м2", br.get("engineering_work", 25254.0)],
+            ["Отдел. раб за м2", br.get("finishing_work", 33024.0)],
+            ["Материал инженерия", br.get("engineering_mat", 29475.0)],
+            ["Материал отделка", br.get("finishing_mat", 26500.0)],
+            ["Материал инж (%)", br.get("eng_mat_pct", 85.0)],
+            ["Материал отдел (%)", br.get("fin_mat_pct", 120.0)],
+            ["Мебель: Маркетплейс (%)", br.get("furn_market", 20.0)],
+            ["Мебель: Агрегаторы (%)", br.get("furn_aggr", 25.0)],
+            ["Мебель: Индив. изготовление (%)", br.get("furn_custom", 35.0)],
+            ["Техника: Базовая (%)", br.get("app_base", 10.0)],
+            ["Техника: Средняя (%)", br.get("app_mid", 15.0)],
+            ["Техника: Премиум (%)", br.get("app_prem", 25.0)],
+            ["Шаблон Инженерия", br.get("template_eng", "")],
+            ["Шаблон Отделка", br.get("template_fin", "")],
+            ["Шаблон Комплекс", br.get("template_complex", "")],
+            ["Шаблон Вайтбокс", br.get("template_whitebox", "")],
+            ["Папка сохранения", br.get("folder_id", "")],
         ]
+
+        # Добавляем все пользовательские поля шаблонов
+        for ct in br.get("custom_templates", []):
+            t_name = str(ct.get("name", "")).strip()
+            t_id = str(ct.get("id", "")).strip()
+            if t_name:
+                if not t_name.lower().startswith("шаблон"):
+                    t_name = f"Шаблон: {t_name}"
+                rates_arr.append([t_name, t_id])
         
         coeffs_arr = []
-        for c in data["coefficients"]:
+        for c in data.get("coefficients", []):
             coeffs_arr.append([c["id"], c["name"], c["value"], c["type"]])
         
         stages_arr = []
-        for s in data["eng_stages"]:
+        for s in data.get("eng_stages", []):
             stages_arr.append([s["num"], s["title"], s["w_share"], s["m_share"], s["days"], s["w_desc"], s["m_desc"]])
-        for s in data["fin_stages"]:
+        for s in data.get("fin_stages", []):
             stages_arr.append([s["num"], s["title"], s["w_share"], s["m_share"], s["days"], s["w_desc"], s["m_desc"]])
 
         # Очищаем старые диапазоны и записываем новые без смещения ячеек
-        ws.batch_clear(["A2:B30", "D2:G500", "L2:R500"])
+        ws.batch_clear(["A2:B60", "D2:G500", "L2:R500"])
         if rates_arr: ws.update("A2", rates_arr)
         if coeffs_arr: ws.update("D2", coeffs_arr)
         if stages_arr: ws.update("L2", stages_arr)

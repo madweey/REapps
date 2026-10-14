@@ -5,7 +5,6 @@ from datetime import datetime
 import requests
 from apps.core.sheets import RepairDataSync
 
-# URL развернутого веб-приложения Google Apps Script
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxN7gEgP0ds1u5niMtdLLgTs6Qo20Hb2nrHcJi7tzKh-9LlaC3QSGKdnGGuxzU9z0htvw/exec"
 
 def _parse_float(val, default=0.0) -> float:
@@ -41,10 +40,12 @@ def get_k_state(state_name: str) -> float:
     s = state_name.lower()
     if "застройщика" in s: return 1.2
     if "вторичка" in s:
-        if "нужен" in s or "демонтаж" in s and "без" not in s and "выполнен" not in s: return 1.2
+        if ("нужен" in s or "демонтаж" in s) and "без" not in s and "выполнен" not in s:
+            return 1.2
     if "вайтбокс" in s:
         if "без" in s: return 0.9
-        if "с демонтаж" in s: return 1.15
+        if "частичн" in s: return 1.10
+        if "с демонтаж" in s or "демонтаж" in s: return 1.15
     return 1.0
 
 def calculate_eng_duration(area: float, state_name: str, tariff_name: str) -> int:
@@ -67,16 +68,13 @@ def calculate_fin_duration(area: float, state_name: str, tariff_name: str) -> in
     k_tariff = 1.2 if "комфорт" in t else (1.25 if "бизнес" in t else (1.3 if "люкс" in t else 1.0))
     return max(1, int(round(area * k_area * k_state * k_tariff)))
 
-def _distribute_stages(area: float, work_total: float, material_rate: float, stages_data: list, total_days: int) -> dict:
-    mat_total = area * material_rate
+def _distribute_stages(area: float, work_total: float, mat_total: float, stages_data: list, total_days: int) -> dict:
     grand_total = work_total + mat_total
-
     w_sum, m_sum, d_sum = sum(s["w_share"] for s in stages_data), sum(s["m_share"] for s in stages_data), sum(s["days"] for s in stages_data)
     if w_sum > 0:
         for s in stages_data: s["w_share"] /= w_sum
     if m_sum > 0:
         for s in stages_data: s["m_share"] /= m_sum
-
     allocated_days = [max(1, int(round(total_days * (s["days"] / d_sum)))) for s in stages_data] if d_sum > 0 else [max(1, int(round(total_days / len(stages_data)))) for _ in stages_data]
     diff_days = total_days - sum(allocated_days)
     if diff_days != 0 and allocated_days: allocated_days[allocated_days.index(max(allocated_days))] += diff_days
@@ -94,18 +92,77 @@ def _distribute_stages(area: float, work_total: float, material_rate: float, sta
         "total_days": total_days, "total_months": int(round(total_days / 22.0)), "stages": calculated_stages,
     }
 
-def calculate_engineering_stages(area: float, work_total: float, state_name: str = "", tariff_name: str = "", config: dict = None) -> dict:
+def calculate_engineering_stages(area: float, work_total: float, mat_total: float, state_name: str = "", tariff_name: str = "", config: dict = None) -> dict:
     total_days = calculate_eng_duration(area, state_name, tariff_name)
     stages = [dict(s) for s in config["eng_stages"]]
     s_lower = state_name.lower()
-    if (("с демонтаж" in s_lower) or ("застройщика" in s_lower) or ("нужен демонтаж" in s_lower)) and len(stages) > 0:
-        stages[0]["title"] = "1. Демонтажные и подготовительные работы"
-    return _distribute_stages(area, work_total, config["base_rates"]["engineering_mat"], stages, total_days)
+    
+    is_wb_demo = ("вайтбокс" in s_lower and ("демонтаж" in s_lower or "частичн" in s_lower) and "без" not in s_lower)
+    is_secondary_demo = (
+        ("вторичка" in s_lower and ("нужен" in s_lower or "демонтаж" in s_lower) and "без" not in s_lower and "выполнен" not in s_lower)
+        or ("застройщика" in s_lower)
+    )
 
-def calculate_finishing_stages(area: float, work_total: float, state_name: str = "", tariff_name: str = "", config: dict = None) -> dict:
+    if (is_wb_demo or is_secondary_demo) and len(stages) > 0:
+        stages[0]["title"] = "1. Демонтажные и подготовительные работы"
+
+        if is_wb_demo:
+            # Изоляция для Вайтбокса (С полным или частичным демонтажем) относительно Вайтбокса без демонтажа
+            val_demo = 0.10 if "частичн" in s_lower else 0.15
+            val_nodemo = -0.10
+            for c in config.get("coefficients", []):
+                c_name = c["name"].lower()
+                if "вайтбокс" in c_name:
+                    if "частичн" in s_lower and "частичн" in c_name:
+                        val_demo = c["value"]
+                    elif "частичн" not in s_lower and "с демонтаж" in c_name and "частичн" not in c_name:
+                        val_demo = c["value"]
+                    elif "без" in c_name:
+                        val_nodemo = c["value"]
+            
+            base_state_for_days = "Вайтбокс (Без демонтажа)"
+        else:
+            # Изоляция для Вторички с демонтажем / От застройщика относительно Голого бетона (0.0)
+            val_demo = 0.20
+            val_nodemo = 0.0
+            for c in config.get("coefficients", []):
+                c_name = c["name"].lower()
+                if ("вторичка" in s_lower and "вторичка" in c_name and ("нужен" in c_name or "демонтаж" in c_name) and "без" not in c_name and "выполнен" not in c_name):
+                    val_demo = c["value"]
+                elif ("застройщика" in s_lower and "застройщика" in c_name):
+                    val_demo = c["value"]
+            
+            base_state_for_days = "Голый бетон"
+
+        premium_ratio = max(0.0, min(0.9, (val_demo - val_nodemo) / (1.0 + max(0.0, val_demo))))
+        premium_work = work_total * premium_ratio
+        premium_mat = mat_total * premium_ratio
+        
+        days_demo_k = get_k_state(state_name)
+        days_nodemo_k = get_k_state(base_state_for_days)
+        days_premium_ratio = max(0.0, min(0.9, (days_demo_k - days_nodemo_k) / days_demo_k)) if days_demo_k > 0 else 0.0
+        premium_days = int(round(total_days * days_premium_ratio))
+        
+        res = _distribute_stages(area, work_total - premium_work, mat_total - premium_mat, stages, max(1, total_days - premium_days))
+        
+        res["stages"][0]["work_cost"] += premium_work
+        res["stages"][0]["mat_cost"] += premium_mat
+        res["stages"][0]["stage_total"] += (premium_work + premium_mat)
+        res["stages"][0]["days"] += premium_days
+        
+        res["work_total"] = work_total
+        res["mat_total"] = mat_total
+        res["grand_total"] = work_total + mat_total
+        res["total_days"] = total_days
+        res["total_months"] = int(round(total_days / 22.0))
+        return res
+
+    return _distribute_stages(area, work_total, mat_total, stages, total_days)
+
+def calculate_finishing_stages(area: float, work_total: float, mat_total: float, state_name: str = "", tariff_name: str = "", config: dict = None) -> dict:
     total_days = calculate_fin_duration(area, state_name, tariff_name)
     stages = [dict(s) for s in config["fin_stages"]]
-    return _distribute_stages(area, work_total, config["base_rates"]["finishing_mat"], stages, total_days)
+    return _distribute_stages(area, work_total, mat_total, stages, total_days)
 
 def generate_universal_estimate_presentation(project_data: dict) -> dict:
     cfg = load_repair_estimate_settings()
@@ -115,6 +172,8 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
     area = float(project_data.get("area", 0.0))
     eng_cost = float(project_data.get("eng_cost", 0.0))
     fin_cost = float(project_data.get("fin_cost", 0.0))
+    eng_mat_cost = float(project_data.get("eng_mat_cost", 0.0))
+    fin_mat_cost = float(project_data.get("fin_mat_cost", 0.0))
     furniture_cost = float(project_data.get("furniture_cost", 0.0))
     appliances_cost = float(project_data.get("appliances_cost", 0.0))
     
@@ -122,8 +181,8 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
     client_name = str(project_data.get("client_name", "Заказчик")).strip()
     state_name = str(project_data.get("state", "Голый бетон")).strip()
     
-    eng_model = calculate_engineering_stages(area, eng_cost, state_name, "Комфорт", cfg)
-    fin_model = calculate_finishing_stages(area, fin_cost, state_name, "Комфорт", cfg)
+    eng_model = calculate_engineering_stages(area, eng_cost, eng_mat_cost, state_name, "Комфорт", cfg)
+    fin_model = calculate_finishing_stages(area, fin_cost, fin_mat_cost, state_name, "Комфорт", cfg)
 
     today_str = datetime.now().strftime("%d.%m.%Y")
     replacements = {
@@ -176,10 +235,13 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
     else:
         template_id = cfg["base_rates"]["template_complex"]
         doc_title = f'RE Комплексный ремонт "{address}" | {area:g} м2'
-        complex_total = eng_model["grand_total"] + fin_model["grand_total"] + furniture_cost + appliances_cost
+        
+        repair_total = eng_model["grand_total"] + fin_model["grand_total"]
+        full_budget_total = repair_total + furniture_cost + appliances_cost
         complex_days = eng_model['total_days'] + fin_model['total_days']
         
         replacements.update({
+            # Инженерия
             "{Цена ИР}": _format_money(eng_model["work_total"]),
             "{Цена МИР}": _format_money(eng_model["mat_total"]),
             "{Цена ИР+М}": _format_money(eng_model["grand_total"]),
@@ -189,6 +251,7 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
             "{СрокД ИР}": f"{eng_model['total_days']} раб. дней",
             "{СрокМ ИР}": f"~{eng_model['total_months']} месяцев",
             
+            # Отделка
             "{Цена ОР}": _format_money(fin_model["work_total"]),
             "{Цена МОР}": _format_money(fin_model["mat_total"]),
             "{Цена ОР+ОМ}": _format_money(fin_model["grand_total"]),
@@ -198,16 +261,15 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
             "{СрокД ОР}": f"{fin_model['total_days']} раб. дней",
             "{СрокМ ОР}": f"~{fin_model['total_months']} месяцев",
 
+            # Комплекс
             "{Цена КР}": _format_money(eng_model["work_total"] + fin_model["work_total"]),
             "{Цена МКР}": _format_money(eng_model["mat_total"] + fin_model["mat_total"]),
-            "{Цена КР+М}": _format_money(complex_total),
-            "{Цена КР+Мм2}": _format_money(complex_total / area) if area else "0 ₽",
-            "{Полнбюдж КР+М}": _format_money(complex_total),
-            "{Полнбюдж КР+Мм2}": _format_money(complex_total / area) if area else "0 ₽",
-            
+            "{Цена КР+М}": _format_money(repair_total),
+            "{Цена КР+Мм2}": _format_money(repair_total / area) if area else "0 ₽",
+            "{Полнбюдж КР+М}": _format_money(full_budget_total),
+            "{Полнбюдж КР+Мм2}": _format_money(full_budget_total / area) if area else "0 ₽",
             "{СрокД КР}": f"{complex_days} раб. дней",
             "{СрокМ КР}": f"~{int(round(complex_days / 22.0))} месяцев",
-            
             "{Меб КР}": _format_money(furniture_cost),
             "{Тех КР}": _format_money(appliances_cost),
         })

@@ -16,6 +16,9 @@ from apps.transcription.prompts_view import PromptsView
 from apps.transcription.audio_extractor_view import AudioExtractorView
 from apps.calculator.dp_view import DPView
 from apps.calculator.repair_rooms_view import RepairRoomsCalculatorView
+# НОВЫЙ ИМПОРТ ФОРМЫ ДП ВРЕМЕННО СКРЫТ ДО РЕЛИЗА ФУНКЦИОНАЛА
+# from apps.forms.dp_contract_view import DpContractFormView
+
 from apps.core.sheets import get_split_vpn_keys, save_split_vpn_keys
 from apps.core.vpn_manager import load_tunnel_states, save_tunnel_states, ping_key
 from apps.core.updater import check_for_updates, download_update_file, apply_update_and_restart, CURRENT_VERSION
@@ -160,6 +163,7 @@ def main(page: ft.Page):
         "transcription_extractor": None,
         "calc_dp": None,
         "calc_repair": None,
+        "forms_dp": None, 
     }
 
     login_name_input = ft.TextField(label="Имя сотрудника (Логин)", width=320, autofocus=True, height=48, border_radius=12)
@@ -701,6 +705,19 @@ def main(page: ft.Page):
                 )
             )
 
+        # РАЗДЕЛ "УМНЫЕ ФОРМЫ" ВРЕМЕННО СКРЫТ ДО РЕЛИЗА ФУНКЦИОНАЛА
+        # if user.get("can_calculator"):
+        #     menu_items.append(
+        #         ft.ExpansionTile(
+        #             leading=ft.Icon(ft.icons.DYNAMIC_FORM, color="#64748B", size=18),
+        #             title=ft.Text("Умные формы", size=13, weight=ft.FontWeight.W_600, color="#1E293B"),
+        #             controls=[
+        #                 make_nav_item("Договор Дизайн Проекта", ft.icons.ASSIGNMENT_IND_OUTLINED, "forms_dp", True),
+        #             ],
+        #             initially_expanded=active_nav_key["val"].startswith("forms_"),
+        #         )
+        #     )
+
         if user.get("can_reports"):
             menu_items.append(make_nav_item("Отчеты", ft.icons.INSERT_CHART_OUTLINED, "reports", False, badge="в разработке"))
 
@@ -841,6 +858,11 @@ def main(page: ft.Page):
                     if not controllers_cache["calc_repair"]:
                         controllers_cache["calc_repair"] = RepairRoomsCalculatorView()
                     view_to_set = controllers_cache["calc_repair"]
+                # ОБРАБОТКА НОВОГО МОДУЛЯ ФОРМЫ (Временно не используется)
+                # elif key == "forms_dp":
+                #     if not controllers_cache["forms_dp"]:
+                #         controllers_cache["forms_dp"] = DpContractFormView()
+                #     view_to_set = controllers_cache["forms_dp"]
                 elif key == "reports":
                     view_to_set = build_in_development_view("Отчеты")
                 elif key == "access":

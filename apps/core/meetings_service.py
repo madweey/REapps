@@ -157,12 +157,21 @@ def complete_meeting(row_idx: int, feedback: str, meeting_url: str) -> bool:
 
 
 def cancel_meeting(row_idx: int, reason: str) -> bool:
-    """Отменяет встречу и записывает причину отмены."""
+    """Отменяет встречу и записывает причину отмены в Результат (ст. 13) и Комментарий (ст. 11)."""
     sh = get_main_spreadsheet()
     ws = sh.worksheet("Встречи")
+    reason_clean = reason.strip() or "Без указания причины"
+
+    # Записываем в колонку 13 (Результат / ОС)
+    ws.update_cell(row_idx, 13, f"Отказ: {reason_clean}")
+
+    # Дополнительно сохраняем в комментарий (колонка 11), если там еще нет этой записи
     current_comment = ws.cell(row_idx, 11).value or ""
-    new_comment = f"{current_comment} [Причина отмены: {reason}]".strip()
-    ws.update_cell(row_idx, 11, new_comment)
+    if f"[Причина отмены: {reason_clean}]" not in current_comment:
+        new_comment = f"{current_comment} [Причина отмены: {reason_clean}]".strip()
+        ws.update_cell(row_idx, 11, new_comment)
+
+    # Обновляем статус в колонке 18
     ws.update_cell(row_idx, 18, "Отказ")
     return True
 
