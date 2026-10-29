@@ -104,55 +104,107 @@ def get_yandex_disk_direct_download_url(public_url: str) -> str:
     raise Exception(f"Ошибка Яндекс.Диска ({resp.status_code}): {resp.text}")
 
 
-def download_file_stream(url: str, target_filename: str, progress_callback=None) -> str:
-    actual_url = url
-    if "disk.yandex." in url or "yadi.sk" in url:
-        actual_url = get_yandex_disk_direct_download_url(url)
+# --- НОВЫЙ БЛОК: Загрузка с Google Диска (обход страницы проверки на вирусы) ---
+def _download_google_drive_file(url: str, target_path: str, progress_callback=None, proxies=None):
+    # Пытаемся вытащить ID файла из ссылки
+    match = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
+    if not match:
+        match = re.search(r"id=([a-zA-Z0-9_-]+)", url)
+    
+    if not match:
+        raise Exception("Не удалось найти ID файла в ссылке Google Drive.")
+    
+    file_id = match.group(1)
+    base_url = "https://drive.google.com/uc?export=download"
+    
+    session = requests.Session()
+    if proxies:
+        session.proxies.update(proxies)
+        
+    if progress_callback: progress_callback("Обращение к серверам Google Диск...")
 
+    response = session.get(base_url, params={'id': file_id}, stream=True, timeout=30)
+    response.raise_for_status()
+
+    # Проверяем, не перекинул ли нас гугл на HTML страницу подтверждения антивируса
+    token = _get_confirm_token_from_cookies(session.cookies)
+    if token:
+        if progress_callback: progress_callback("Обход проверки на вирусы (большой файл)...")
+        params = {'id': file_id, 'confirm': token}
+        response = session.get(base_url, params=params, stream=True, timeout=30)
+        response.raise_for_status()
+
+    # Сохраняем файл
+    _save_response_content(response, target_path, progress_callback)
+    return target_path
+
+def _get_confirm_token_from_cookies(cookies):
+    for cookie in cookies:
+        if cookie.name.startswith('download_warning'):
+            return cookie.value
+    return None
+
+def _save_response_content(response, target_path, progress_callback):
+    total_size = int(response.headers.get("content-length", 0))
+    downloaded = 0
+    with open(target_path, "wb") as f:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                f.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback and total_size > 0:
+                    progress_callback(downloaded / total_size)
+
+
+def download_file_stream(url: str, target_filename: str, progress_callback=None) -> str:
     target_path = os.path.join(TEMP_DIR, target_filename)
-    is_megapbx = "megapbx.ru" in actual_url
+
     enable_ru, _ = load_tunnel_states()
     ru_keys, _ = get_split_vpn_keys()
-
+    
+    is_megapbx = "megapbx.ru" in url
     candidates = ru_keys.copy() if (is_megapbx and enable_ru and ru_keys) else [None]
 
     last_error = None
     for key_or_none in candidates:
         try:
+            proxies = None
             if key_or_none:
-                if progress_callback: progress_callback("Подключение через туннель РФ (МегаФон)...")
+                # Настраиваем прокси, если используем VPN Мегафона
+                from apps.core.vpn_manager import OnDemandTunnel
                 with OnDemandTunnel(key_or_none, local_http_port=20810) as proxy_url:
                     proxies = {"http": proxy_url, "https": proxy_url}
-                    with requests.get(actual_url, stream=True, timeout=30, proxies=proxies) as r:
-                        r.raise_for_status()
-                        total_size = int(r.headers.get("content-length", 0))
-                        downloaded = 0
-                        with open(target_path, "wb") as f:
-                            for chunk in r.iter_content(chunk_size=1024 * 1024):
-                                if chunk:
-                                    f.write(chunk)
-                                    downloaded += len(chunk)
-                                    if progress_callback and total_size > 0:
-                                        progress_callback(downloaded / total_size)
-                    return target_path
+                    return _process_download(url, target_path, progress_callback, proxies)
             else:
-                if progress_callback: progress_callback("Скачивание медиафайла...")
-                with requests.get(actual_url, stream=True, timeout=45) as r:
-                    r.raise_for_status()
-                    total_size = int(r.headers.get("content-length", 0))
-                    downloaded = 0
-                    with open(target_path, "wb") as f:
-                        for chunk in r.iter_content(chunk_size=1024 * 1024):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                if progress_callback and total_size > 0:
-                                    progress_callback(downloaded / total_size)
-                return target_path
+                return _process_download(url, target_path, progress_callback, None)
+                
         except Exception as e:
             last_error = e
             continue
     raise Exception(f"Не удалось скачать файл: {last_error}")
+
+
+def _process_download(url: str, target_path: str, progress_callback, proxies):
+    # Яндекс.Диск
+    if "disk.yandex." in url or "yadi.sk" in url:
+        actual_url = get_yandex_disk_direct_download_url(url)
+        if progress_callback: progress_callback("Скачивание с Яндекс.Диска...")
+        response = requests.get(actual_url, stream=True, timeout=30, proxies=proxies)
+        response.raise_for_status()
+        _save_response_content(response, target_path, progress_callback)
+        return target_path
+    
+    # Google Диск
+    elif "drive.google.com" in url:
+        return _download_google_drive_file(url, target_path, progress_callback, proxies)
+    
+    # Обычная прямая ссылка (в т.ч. Mango/Megapbx)
+    else:
+        if progress_callback: progress_callback("Скачивание медиафайла...")
+        response = requests.get(url, stream=True, timeout=45, proxies=proxies)
+        response.raise_for_status()
+        _save_response_content(response, target_path, progress_callback)
+        return target_path
 
 
 def extract_audio_with_ffmpeg(input_path: str, progress_callback=None) -> str:
@@ -177,7 +229,7 @@ def extract_audio_to_folder(source_type: str, source_val: str, output_folder: st
     local_input, is_temp = "", False
     try:
         if source_type == "url":
-            if progress_callback: progress_callback("Скачивание видео по ссылке...")
+            if progress_callback: progress_callback("Получение ссылки на файл...")
             temp_name = f"download_{int(time.time())}.dat"
             local_input = download_file_stream(source_val, temp_name, progress_callback)
             is_temp, base_title = True, custom_name.strip() or f"audio_{int(time.time())}"

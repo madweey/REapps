@@ -1,3 +1,4 @@
+import os
 import flet as ft
 from apps.calculator.repair_state import current_repair_state
 from apps.calculator.repair_estimate_service import (
@@ -52,7 +53,10 @@ class RepairRoomsCalculatorView(ft.UserControl):
         self.repair_type_seg = ft.SegmentedButton(selected={_VIEW_STATE_CACHE["repair_type"]}, allow_multiple_selection=False, on_change=self.on_param_change, segments=[ft.Segment(value="complex", label=ft.Text("Комплекс", size=12, weight=ft.FontWeight.W_600)), ft.Segment(value="engineering", label=ft.Text("Инженерный", size=12)), ft.Segment(value="finishing", label=ft.Text("Отделочные", size=12))])
         self.rooms_count_dropdown = ft.Dropdown(label="Комнат (без СУ)", value=_VIEW_STATE_CACHE["rooms_count"], width=150, height=46, text_size=13, filled=True, fill_color="#F8FAFC", border_radius=12, options=[ft.dropdown.Option(str(i)) for i in range(1, 7)], on_change=self.on_counts_change)
         self.baths_count_dropdown = ft.Dropdown(label="Санузлов", value=_VIEW_STATE_CACHE["baths_count"], width=130, height=46, text_size=13, filled=True, fill_color="#F8FAFC", border_radius=12, options=[ft.dropdown.Option(str(i)) for i in range(1, 4)], on_change=self.on_counts_change)
-        self.state_dropdown = ft.Dropdown(label="Состояние объекта", value=_VIEW_STATE_CACHE["state_dropdown"], expand=True, height=46, text_size=13, filled=True, fill_color="#F8FAFC", border_radius=12, options=[ft.dropdown.Option(k, v) for k, v in self.state_options], on_change=self.on_param_change)
+        
+        # ИСПРАВЛЕНИЕ: Убран expand=True, чтобы не ломать верстку в скролле!
+        self.state_dropdown = ft.Dropdown(label="Состояние объекта", value=_VIEW_STATE_CACHE["state_dropdown"], height=46, text_size=13, filled=True, fill_color="#F8FAFC", border_radius=12, options=[ft.dropdown.Option(k, v) for k, v in self.state_options], on_change=self.on_param_change)
+        
         self.ceil_high_chip = ft.Chip(label=ft.Text("Потолок > 3.0 м (+10%)", size=12), selected=_VIEW_STATE_CACHE["ceil_high"], on_select=self.on_ceil_high_toggle)
 
         self.part_dropdown = ft.Dropdown(label="Перегородки", value=_VIEW_STATE_CACHE["global_part"], expand=True, height=46, text_size=12, options=[ft.dropdown.Option(k, v) for k, v in self._build_options_list("part_", "База (Пеноблок)")], on_change=self.on_global_eng_change)
@@ -486,6 +490,17 @@ class RepairRoomsCalculatorView(ft.UserControl):
         e.page.show_snack_bar(ft.SnackBar(ft.Text("Скопировано!"), duration=2000))
 
     def refresh_settings(self, e):
+        e.page.show_snack_bar(ft.SnackBar(ft.Text("Загрузка актуальных тарифов из Google Таблиц..."), duration=2000))
+        e.page.update()
+        
+        # ИСПРАВЛЕНИЕ: Принудительное удаление старого файла кэша перед обновлением
+        try:
+            local_db_path = RepairDataSync.get_local_path()
+            if os.path.exists(local_db_path):
+                os.remove(local_db_path)
+        except Exception:
+            pass
+
         self.settings = load_base_rates_and_coefficients()
         self.state_options = self._build_options_list("state_")
         if not self.state_options: self.state_options = [("base", "Голый бетон")]
@@ -502,4 +517,4 @@ class RepairRoomsCalculatorView(ft.UserControl):
         self.rebuild_room_data_structures()
         self.recalculate()
         self.update()
-        e.page.show_snack_bar(ft.SnackBar(ft.Text("Тарифы обновлены!"), duration=2000))
+        e.page.show_snack_bar(ft.SnackBar(ft.Text("Тарифы успешно обновлены!"), duration=2000))

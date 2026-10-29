@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import threading
 import flet as ft
@@ -36,8 +37,8 @@ def AudioExtractorView(page: ft.Page):
     )
 
     video_url_input = ft.TextField(
-        label="Ссылка на видео (Яндекс.Диск или прямая)",
-        hint_text="https://disk.yandex.ru/i/...",
+        label="Ссылка на видео (Google Диск, Яндекс.Диск или прямая)",
+        hint_text="https://drive.google.com/file/... или https://disk.yandex.ru/i/...",
         expand=True,
         height=48,
         text_size=13,
@@ -103,7 +104,6 @@ def AudioExtractorView(page: ft.Page):
         fill_color="#F1F5F9",
         border=ft.InputBorder.NONE,
         border_radius=12,
-        expand=True,
     )
 
     save_dir_label = ft.Text(f"Папка: {chosen_folder['path']}", size=12, color="#475569", expand=True)
@@ -266,7 +266,7 @@ def AudioExtractorView(page: ft.Page):
         content=ft.Column(
             controls=[
                 ft.Text("Извлечение звука (Аудио экстрактор)", size=24, weight=ft.FontWeight.BOLD, color="#0F172A"),
-                ft.Text("Быстрое извлечение MP3-аудиодорожки из видеофайла или по ссылке Яндекс.Диска с сохранением на ПК", size=13, color="#64748B"),
+                ft.Text("Быстрое извлечение MP3-аудиодорожки из видеофайла или по ссылке Яндекс.Диска / Google Диска с сохранением на ПК", size=13, color="#64748B"),
                 ft.Container(height=4),
                 card,
             ],

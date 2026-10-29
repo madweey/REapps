@@ -1,6 +1,7 @@
 import json
 import math
 import re
+import time
 from datetime import datetime
 import requests
 from apps.core.sheets import RepairDataSync
@@ -107,7 +108,6 @@ def calculate_engineering_stages(area: float, work_total: float, mat_total: floa
         stages[0]["title"] = "1. Демонтажные и подготовительные работы"
 
         if is_wb_demo:
-            # Изоляция для Вайтбокса (С полным или частичным демонтажем) относительно Вайтбокса без демонтажа
             val_demo = 0.10 if "частичн" in s_lower else 0.15
             val_nodemo = -0.10
             for c in config.get("coefficients", []):
@@ -122,7 +122,6 @@ def calculate_engineering_stages(area: float, work_total: float, mat_total: floa
             
             base_state_for_days = "Вайтбокс (Без демонтажа)"
         else:
-            # Изоляция для Вторички с демонтажем / От застройщика относительно Голого бетона (0.0)
             val_demo = 0.20
             val_nodemo = 0.0
             for c in config.get("coefficients", []):
@@ -241,7 +240,6 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
         complex_days = eng_model['total_days'] + fin_model['total_days']
         
         replacements.update({
-            # Инженерия
             "{Цена ИР}": _format_money(eng_model["work_total"]),
             "{Цена МИР}": _format_money(eng_model["mat_total"]),
             "{Цена ИР+М}": _format_money(eng_model["grand_total"]),
@@ -251,7 +249,6 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
             "{СрокД ИР}": f"{eng_model['total_days']} раб. дней",
             "{СрокМ ИР}": f"~{eng_model['total_months']} месяцев",
             
-            # Отделка
             "{Цена ОР}": _format_money(fin_model["work_total"]),
             "{Цена МОР}": _format_money(fin_model["mat_total"]),
             "{Цена ОР+ОМ}": _format_money(fin_model["grand_total"]),
@@ -261,7 +258,6 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
             "{СрокД ОР}": f"{fin_model['total_days']} раб. дней",
             "{СрокМ ОР}": f"~{fin_model['total_months']} месяцев",
 
-            # Комплекс
             "{Цена КР}": _format_money(eng_model["work_total"] + fin_model["work_total"]),
             "{Цена МКР}": _format_money(eng_model["mat_total"] + fin_model["mat_total"]),
             "{Цена КР+М}": _format_money(repair_total),
@@ -295,8 +291,19 @@ def generate_universal_estimate_presentation(project_data: dict) -> dict:
 
     headers = {"Content-Type": "text/plain;charset=utf-8"}
     raw_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    response = requests.post(WEB_APP_URL, data=raw_data, headers=headers, timeout=120, allow_redirects=True)
-    text_resp = response.text.strip()
+    
+    max_retries = 3
+    text_resp = ""
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(WEB_APP_URL, data=raw_data, headers=headers, timeout=120, allow_redirects=True)
+            text_resp = response.text.strip()
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2)
+            else:
+                raise RuntimeError(f"Ошибка сети (сброс соединения) после {max_retries} попыток: {e}")
     
     try: res_data = json.loads(text_resp)
     except Exception: raise RuntimeError(f"Ответ сервера не JSON: {text_resp[:200]}")

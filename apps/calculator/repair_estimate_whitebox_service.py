@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import datetime
 import requests
 from apps.core.sheets import RepairDataSync
@@ -71,7 +72,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
     s_lower = state_name.lower()
     doc_title = f'RE Сравнение Вайтбокс "{address}" | {area:g} м2'
 
-    # ВОССТАНОВЛЕНИЕ БАЗОВЫХ СУММ БЕЗ КОЭФФИЦИЕНТОВ
     val_demo = 0.10 if "частичн" in s_lower else 0.15
     val_nodemo = -0.10
     for c in cfg.get("coefficients", []):
@@ -84,14 +84,12 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
             elif "без" in c_name:
                 val_nodemo = c["value"]
 
-    # 1. Считаем Путь Б (60% Вайтбокс - Без демонтажа)
     days_100_wb = max(1, calculate_eng_duration(area, "Вайтбокс (Без демонтажа)", "Комфорт"))
     days_60_wb = max(1, int(round(days_100_wb * 0.6)))
     
     stages_B = [dict(s) for s in cfg.get("eng_stages", [])]
     eng_model_B = _distribute_stages(eng_cost, eng_mat_cost, stages_B, days_60_wb)
 
-    # 2. Считаем Путь А (Снос до бетона, 100% с изоляцией демонтажа)
     eng_work_100_demo = eng_cost / 0.6 if eng_cost > 0 else 0
     eng_mat_100_demo = eng_mat_cost / 0.6 if eng_mat_cost > 0 else 0
     days_100_demo = max(1, calculate_eng_duration(area, state_name, "Комфорт"))
@@ -109,10 +107,8 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
     days_premium_ratio = max(0.0, min(0.9, (days_demo_k - days_nodemo_k) / days_demo_k))
     premium_days = int(round(days_100_demo * days_premium_ratio))
     
-    # Распределяем базовую часть (без наценки)
     eng_model_A = _distribute_stages(eng_work_100_demo - premium_work, eng_mat_100_demo - premium_mat, stages_A, max(1, days_100_demo - premium_days))
     
-    # Изоляция демонтажа в Этап 1 для Пути А
     eng_model_A["stages"][0]["work_cost"] += premium_work
     eng_model_A["stages"][0]["mat_cost"] += premium_mat
     eng_model_A["stages"][0]["stage_total"] += (premium_work + premium_mat)
@@ -122,7 +118,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
     eng_model_A["grand_total"] = eng_work_100_demo + eng_mat_100_demo
     eng_model_A["total_days"] = days_100_demo
     
-    # Отделка
     fin_days = calculate_fin_duration(area, state_name, "Комфорт")
     fin_model = _distribute_stages(fin_cost, fin_mat_cost, [dict(s) for s in cfg.get("fin_stages", [])], fin_days)
 
@@ -135,7 +130,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
     replacements = {
         "{Адрес}": address, "{м2}": f"{area:g}", "{Имя}": client_name, "{Состояние}": state_name, "{сегодня}": datetime.now().strftime("%d.%m.%Y"),
         
-        # Разница
         "{Разница ИР}": _format_money(eng_model_A["work_total"] - eng_model_B["work_total"]),
         "{Разница МИР}": _format_money(eng_model_A["mat_total"] - eng_model_B["mat_total"]),
         "{Разница}": _format_money(total_A - total_B),
@@ -145,7 +139,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
         "{Разница СрокО}": "0 раб. дней",
         "{Разница %}": f"{int(round(((total_A - total_B) / total_A) * 100)) if total_A > 0 else 0}%",
 
-        # Путь А (Д)
         "{Цена ИР Д}": _format_money(eng_model_A["work_total"]),
         "{Цена МИР Д}": _format_money(eng_model_A["mat_total"]),
         "{Цена ИР+М Д}": _format_money(eng_model_A["grand_total"]),
@@ -154,7 +147,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
         "{ИТОГО Дм2}": _format_money(total_A / area) if area else "0 ₽",
         "{Срок Д}": f"{complex_days_A} раб. дней",
 
-        # Путь Б (Б)
         "{Цена ИР Б}": _format_money(eng_model_B["work_total"]),
         "{Цена МИР Б}": _format_money(eng_model_B["mat_total"]),
         "{Цена ИР+М Б}": _format_money(eng_model_B["grand_total"]),
@@ -163,7 +155,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
         "{ИТОГО Бм2}": _format_money(total_B / area) if area else "0 ₽",
         "{Срок Б}": f"{complex_days_B} раб. дней",
 
-        # Общие
         "{Цена ИР+М}": _format_money(eng_model_A["grand_total"]),
         "{Цена КР+М}": _format_money(total_A),
         "{Цена КР+Мм2}": _format_money(total_A / area) if area else "0 ₽",
@@ -171,7 +162,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
         "{СрокД КР}": f"{complex_days_A} раб. дней",
         "{СрокМ КР}": f"~{int(round(complex_days_A / 22.0))} месяцев",
 
-        # Отделка
         "{Цена ОР}": _format_money(fin_model["work_total"]),
         "{Цена МОР}": _format_money(fin_model["mat_total"]),
         "{Цена ОР+ОМ}": _format_money(fin_model["grand_total"]),
@@ -181,7 +171,6 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
         "{СрокМ ОР}": f"~{fin_model['total_months']} месяцев",
     }
 
-    # Пошаговые этапы
     for idx, st in enumerate(eng_model_A["stages"], start=1):
         replacements.update({f"{{{idx}СрокИ Д}}": f"{st['days']} раб. дней", f"{{{idx}СРИ Д}}": _format_money(st["work_cost"]), f"{{{idx}СЧМИ Д}}": _format_money(st["mat_cost"]), f"{{{idx}СЧЭИ Д}}": _format_money(st["stage_total"])})
     for idx, st in enumerate(eng_model_B["stages"], start=1):
@@ -191,8 +180,20 @@ def generate_whitebox_estimate_presentation(project_data: dict) -> dict:
 
     payload = {"template_id": template_id, "folder_id": folder_id, "title": doc_title, "fileName": doc_title, "name": doc_title, "doc_title": doc_title, "address": address, "area": f"{area:g}", "client_name": client_name, "replacements": replacements}
     
-    response = requests.post(WEB_APP_URL, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "text/plain;charset=utf-8"}, timeout=120, allow_redirects=True)
-    res_data = json.loads(response.text.strip())
+    max_retries = 3
+    text_resp = ""
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(WEB_APP_URL, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "text/plain;charset=utf-8"}, timeout=120, allow_redirects=True)
+            text_resp = response.text.strip()
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2)
+            else:
+                raise RuntimeError(f"Ошибка сети (сброс соединения) после {max_retries} попыток: {e}")
+
+    res_data = json.loads(text_resp)
     if res_data.get("status") != "ok": raise RuntimeError(f"Ошибка скрипта: {res_data.get('message')}")
 
     return {"presentation_id": res_data.get("presentation_id"), "title": doc_title, "edit_url": res_data.get("presentation_url"), "pdf_url": res_data.get("pdf_url")}
